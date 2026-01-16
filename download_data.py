@@ -85,7 +85,7 @@ def download_feature_files():
 
 
 def download_audioset():
-    """Download and extract AudioSet background audio samples."""
+    """Download AudioSet background audio samples using streaming."""
     print("\n" + "="*60)
     print("Step 2: Downloading AudioSet Background Audio")
     print("="*60)
@@ -93,7 +93,7 @@ def download_audioset():
     output_dir = Path("audioset_16k")
     
     # Check if already has content
-    if output_dir.exists() and any(output_dir.glob("*.wav")):
+    if output_dir.exists() and len(list(output_dir.glob("*.wav"))) >= 1000:
         count = len(list(output_dir.glob("*.wav")))
         print(f"[✓] audioset_16k already has {count} files")
         return True
@@ -110,35 +110,39 @@ def download_audioset():
         print("    Please run: pip install scipy numpy tqdm datasets")
         return False
     
-    print("Downloading AudioSet balanced training split...")
-    print("(This may take 5-15 minutes depending on your connection)")
+    print("Downloading AudioSet samples (streaming mode)...")
+    print("Target: 2000 audio clips for training")
     
     try:
-        # Load AudioSet balanced training split directly via HuggingFace datasets
+        # Use streaming to avoid downloading entire dataset
         audioset = datasets.load_dataset(
             "agkphysics/AudioSet", 
             "balanced", 
             split="train",
-            trust_remote_code=True
+            streaming=True
         )
         
-        print(f"Downloaded {len(audioset)} audio clips. Converting to 16kHz WAV...")
+        max_clips = 2000
+        count = 0
+        errors = 0
         
-        # Convert to 16kHz and save as WAV
-        # Limit to first 5000 clips to keep download reasonable
-        max_clips = min(5000, len(audioset))
-        
-        for i, row in tqdm(enumerate(audioset), total=max_clips, desc="Converting"):
-            if i >= max_clips:
+        for row in tqdm(audioset, total=max_clips, desc="Downloading"):
+            if count >= max_clips:
                 break
             try:
-                audio = row['audio']['array']
+                audio = np.array(row['audio']['array'])
                 sr = row['audio']['sampling_rate']
                 
                 # Resample to 16kHz if needed
                 if sr != 16000:
-                    import librosa
-                    audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+                    try:
+                        import librosa
+                        audio = librosa.resample(audio.astype(np.float32), orig_sr=sr, target_sr=16000)
+                    except ImportError:
+                        # Simple decimation as fallback
+                        factor = sr // 16000
+                        if factor > 1:
+                            audio = audio[::factor]
                 
                 # Convert to int16
                 audio = (audio * 32767).astype(np.int16)
@@ -146,69 +150,21 @@ def download_audioset():
                 # Save
                 name = f"audioset_{row['video_id']}.wav"
                 scipy.io.wavfile.write(output_dir / name, 16000, audio)
-            except Exception as e:
-                continue  # Skip problematic files
-        
-        saved_count = len(list(output_dir.glob("*.wav")))
-        print(f"[✓] Saved {saved_count} AudioSet files")
-        return True
-        
-    except Exception as e:
-        print(f"[!] Error downloading AudioSet: {e}")
-        print("    Trying alternative method...")
-        return download_audioset_alternative()
-
-
-def download_audioset_alternative():
-    """Alternative AudioSet download using streaming."""
-    output_dir = Path("audioset_16k")
-    output_dir.mkdir(exist_ok=True)
-    
-    try:
-        import scipy.io.wavfile
-        import numpy as np
-        from tqdm import tqdm
-        import datasets
-        
-        print("Trying streaming download...")
-        audioset = datasets.load_dataset(
-            "agkphysics/AudioSet", 
-            "balanced", 
-            split="train",
-            streaming=True,
-            trust_remote_code=True
-        )
-        
-        max_clips = 2000  # Smaller number for streaming
-        count = 0
-        
-        for row in tqdm(audioset, total=max_clips, desc="Downloading"):
-            if count >= max_clips:
-                break
-            try:
-                audio = row['audio']['array']
-                sr = row['audio']['sampling_rate']
-                
-                # Simple downsampling (not perfect but works)
-                if sr != 16000:
-                    # Decimate audio
-                    factor = sr // 16000
-                    if factor > 1:
-                        audio = audio[::factor]
-                
-                audio = (audio * 32767).astype(np.int16)
-                name = f"audioset_{row['video_id']}.wav"
-                scipy.io.wavfile.write(output_dir / name, 16000, audio)
                 count += 1
-            except:
+            except Exception as e:
+                errors += 1
+                if errors > 100:
+                    print(f"\n[!] Too many errors ({errors}), stopping")
+                    break
                 continue
         
         saved = len(list(output_dir.glob("*.wav")))
-        print(f"[✓] Downloaded {saved} AudioSet files")
+        print(f"\n[✓] Downloaded {saved} AudioSet files")
         return saved > 0
         
     except Exception as e:
-        print(f"[!] Alternative download failed: {e}")
+        print(f"[!] Error downloading AudioSet: {e}")
+        print("    Please check your internet connection")
         return False
 
 

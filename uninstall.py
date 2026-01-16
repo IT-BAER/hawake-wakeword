@@ -119,9 +119,14 @@ def main():
     
     # Full cleanup includes downloaded models and generated ONNX files
     if args.full:
-        piper_models = script_dir / "piper-sample-generator" / "models"
-        if piper_models.exists():
-            items_to_remove.append(("Piper TTS models (downloaded)", piper_models))
+        # Only delete downloaded ONNX files from piper-sample-generator/models
+        # (not the .json configs which are tracked by git)
+        piper_models_dir = script_dir / "piper-sample-generator" / "models"
+        if piper_models_dir.exists():
+            for onnx_file in piper_models_dir.glob("*.onnx"):
+                items_to_remove.append((f"Piper model: {onnx_file.name}", onnx_file))
+            for pt_file in piper_models_dir.glob("*.pt"):
+                items_to_remove.append((f"Piper model: {pt_file.name}", pt_file))
         
         # Any generated .onnx files in root (not the base models)
         base_models = ["melspectrogram.onnx", "embedding_model.onnx"]

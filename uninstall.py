@@ -3,15 +3,20 @@
 HAwake WakeWord Training - Uninstall Script
 
 Usage:
-    python uninstall.py              # Interactive uninstall
-    python uninstall.py --full       # Full cleanup including models
+    python uninstall.py              # Interactive uninstall (removes cache + temp files)
+    python uninstall.py --full       # Full cleanup including cloned repos, models, trained outputs
     python uninstall.py --keep-venv  # Keep virtual environment
+    python uninstall.py --keep-trained  # Keep trained model output folders
 
 This script removes:
 - Virtual environment (.venv)
-- Generated training data
-- Output models (optional)
+- Generated training data and configs
+- Preview/test output files
 - Cache and temporary files
+- [--full] Cloned repositories (openwakeword, piper-sample-generator)
+- [--full] Downloaded RIR files (mit_rirs)
+- [--full] Generated ONNX models
+- [--full] Trained model output folders (unless --keep-trained)
 """
 
 import os
@@ -72,8 +77,9 @@ def remove_directory(path, name):
 
 def main():
     parser = argparse.ArgumentParser(description="Uninstall HAwake WakeWord Training")
-    parser.add_argument('--full', action='store_true', help="Full cleanup including downloaded models")
+    parser.add_argument('--full', action='store_true', help="Full cleanup including cloned repos and all generated files")
     parser.add_argument('--keep-venv', action='store_true', help="Keep the virtual environment")
+    parser.add_argument('--keep-trained', action='store_true', help="Keep trained model output folders")
     parser.add_argument('-y', '--yes', action='store_true', help="Skip confirmation prompts")
     args = parser.parse_args()
     
@@ -88,21 +94,13 @@ def main():
     if venv_dir.exists() and not args.keep_venv:
         items_to_remove.append(("Virtual environment", venv_dir))
     
-    # Training output directories (always clean these)
-    output_patterns = [
-        ("my_custom_model", "Training outputs"),
+    # Cache directories (always clean these)
+    cache_patterns = [
         ("preview_temp", "Preview cache"),
-        ("openwakeword/openwakeword/my_custom_model", "OpenWakeWord outputs"),
         (".streamlit", "Streamlit cache"),
     ]
     
-    # Also check for wake-word-specific output directories
-    for pattern in ["*_model", "hey_*", "ok_*", "alexa*"]:
-        for p in script_dir.glob(pattern):
-            if p.is_dir() and p.name not in [".venv", "openwakeword", "piper-sample-generator"]:
-                output_patterns.append((p.name, f"Generated: {p.name}"))
-    
-    for pattern, name in output_patterns:
+    for pattern, name in cache_patterns:
         path = script_dir / pattern
         if path.exists():
             items_to_remove.append((name, path))
@@ -117,32 +115,81 @@ def main():
         if pyc_file.exists():
             items_to_remove.append(("Compiled Python", pyc_file))
     
-    # Full cleanup includes downloaded models and generated ONNX files
+    # Generated config files (always remove)
+    generated_files = [
+        "my_model.yaml",
+        "test_output.wav",
+    ]
+    for filename in generated_files:
+        path = script_dir / filename
+        if path.exists():
+            items_to_remove.append((f"Generated: {filename}", path))
+    
+    # Full cleanup mode
     if args.full:
-        # Only delete downloaded ONNX files from piper-sample-generator/models
-        # (not the .json configs which are tracked by git)
+        # Cloned repositories
+        cloned_repos = [
+            ("openwakeword", "OpenWakeWord repository"),
+            ("piper-sample-generator", "Piper sample generator"),
+        ]
+        for folder, name in cloned_repos:
+            path = script_dir / folder
+            if path.exists():
+                items_to_remove.append((name, path))
+        
+        # Downloaded RIR files
+        rir_dir = script_dir / "mit_rirs"
+        if rir_dir.exists():
+            items_to_remove.append(("RIR impulse responses", rir_dir))
+        
+        # Trained model output folders (unless --keep-trained)
+        if not args.keep_trained:
+            # Look for directories that look like trained model outputs
+            # These typically contain checkpoints/, onnx files, etc.
+            exclude_dirs = {".venv", ".git", ".streamlit", "openwakeword", 
+                          "piper-sample-generator", "mit_rirs", "__pycache__",
+                          "preview_temp", "docs", ".github"}
+            
+            for path in script_dir.iterdir():
+                if path.is_dir() and path.name not in exclude_dirs:
+                    # Check if it looks like a model output folder
+                    has_onnx = any(path.glob("*.onnx"))
+                    has_checkpoints = (path / "checkpoints").exists()
+                    has_positive = (path / "positive").exists()
+                    has_negative = (path / "negative").exists()
+                    
+                    if has_onnx or has_checkpoints or has_positive or has_negative:
+                        items_to_remove.append((f"Trained model: {path.name}", path))
+        
+        # Generated ONNX files in root directory (not base models)
+        base_models = {"melspectrogram.onnx", "embedding_model.onnx"}
+        for onnx_file in script_dir.glob("*.onnx"):
+            if onnx_file.name not in base_models:
+                items_to_remove.append((f"Generated model: {onnx_file.name}", onnx_file))
+        
+        # Downloaded Piper TTS models
         piper_models_dir = script_dir / "piper-sample-generator" / "models"
         if piper_models_dir.exists():
             for onnx_file in piper_models_dir.glob("*.onnx"):
                 items_to_remove.append((f"Piper model: {onnx_file.name}", onnx_file))
             for pt_file in piper_models_dir.glob("*.pt"):
                 items_to_remove.append((f"Piper model: {pt_file.name}", pt_file))
+    else:
+        # Standard mode: also remove my_custom_model output directories
+        output_patterns = [
+            ("my_custom_model", "Training outputs"),
+            ("openwakeword/openwakeword/my_custom_model", "OpenWakeWord outputs"),
+        ]
         
-        # Any generated .onnx files in root (not the base models)
-        base_models = ["melspectrogram.onnx", "embedding_model.onnx"]
-        for onnx_file in script_dir.glob("*.onnx"):
-            if onnx_file.name not in base_models:
-                items_to_remove.append((f"Generated model: {onnx_file.name}", onnx_file))
-        
-        # Also check openwakeword/resources/models for generated models
-        oww_models = script_dir / "openwakeword" / "openwakeword" / "resources" / "models"
-        if oww_models.exists():
-            for onnx_file in oww_models.glob("*.onnx"):
-                if onnx_file.name not in base_models:
-                    items_to_remove.append((f"OWW model: {onnx_file.name}", onnx_file))
+        for pattern, name in output_patterns:
+            path = script_dir / pattern
+            if path.exists():
+                items_to_remove.append((name, path))
     
     if not items_to_remove:
         print_success("Nothing to uninstall - environment is clean!")
+        if not args.full:
+            print(f"\n{YELLOW}Tip:{RESET} Use {CYAN}--full{RESET} to also remove cloned repos, trained models, and downloads.")
         return
     
     # Show what will be removed
@@ -150,7 +197,17 @@ def main():
     total_size = 0
     for name, path in items_to_remove:
         size = get_size_str(path)
-        print(f"  • {name}: {CYAN}{path.relative_to(script_dir)}{RESET} ({size})")
+        try:
+            rel_path = path.relative_to(script_dir)
+        except ValueError:
+            rel_path = path
+        print(f"  • {name}: {CYAN}{rel_path}{RESET} ({size})")
+    
+    if not args.full:
+        print(f"\n{YELLOW}Tip:{RESET} Use {CYAN}--full{RESET} to also remove cloned repos, trained models, and downloads.")
+    
+    if args.full and not args.keep_trained:
+        print(f"\n{YELLOW}Note:{RESET} Use {CYAN}--keep-trained{RESET} to preserve your trained model outputs.")
     
     print()
     

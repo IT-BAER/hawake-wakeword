@@ -21,9 +21,39 @@ git clone https://github.com/IT-BAER/hawake-wakeword.git && cd hawake-wakeword &
 
 The setup script automatically:
 - Creates a virtual environment
-- Detects GPU and installs appropriate PyTorch version
+- Detects GPU and verifies CUDA kernel compatibility
+- Installs appropriate PyTorch version (GPU or CPU)
 - Installs all dependencies
 - Launches the WebUI at http://localhost:8501
+
+## Uninstall
+
+### Windows (PowerShell)
+```powershell
+.\uninstall.ps1
+```
+
+### Windows (CMD)
+```cmd
+uninstall.bat
+```
+
+### Linux/macOS
+```bash
+./uninstall.sh
+```
+
+### Options
+| Flag | Description |
+|------|-------------|
+| `--full` | Also remove downloaded TTS models (~200MB) |
+| `--keep-venv` | Keep the virtual environment |
+| `-y` | Skip confirmation prompts |
+
+Example full cleanup:
+```bash
+./uninstall.sh --full -y
+```
 
 ## Features
 
@@ -140,10 +170,25 @@ python check_opset.py my_model.onnx
 
 ## Troubleshooting
 
+### GPU Issues
+
+| Issue | Solution |
+|-------|----------|
+| GPU detected but "no kernel image" | Very new GPU (e.g., RTX 50 series). Use "Force CPU Mode" checkbox in WebUI |
+| Training fails on GPU | Enable "Force CPU Mode" in WebUI sidebar |
+| CUDA not available | Install NVIDIA drivers or use CPU mode |
+| Wrong GPU detected | Set `CUDA_VISIBLE_DEVICES=0` environment variable |
+
+The WebUI has a **"Force CPU Mode"** checkbox under Hardware settings that lets you disable GPU even if one is detected. This is useful for:
+- Very new GPUs that don't have PyTorch kernels yet
+- GPUs with insufficient memory
+- Troubleshooting CUDA issues
+
+### Other Issues
+
 | Issue | Solution |
 |-------|----------|
 | Model crashes on Android | Run `check_opset.py` - must be Opset 11 |
-| Training fails on GPU | Add `--force_cpu` flag |
 | TTS sounds wrong | Adjust spelling phonetically |
 | Low detection accuracy | Increase training examples to 10000+ |
 

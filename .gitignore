@@ -20,6 +20,22 @@ venv/
 # Local AI instructions (not for repo)
 .github/copilot-instructions.md
 
+# Local debug/test scripts
+analyze_android_models.py
+check_hashes.py
+compare_*.py
+fix_indentation*.py
+kopie_*.py
+patch_*.py
+read_*.py
+rename_*.py
+test_*.py
+verify_*.py
+test_minimal.yaml
+
+# Training configs (user-specific)
+my_model.yaml
+
 # Training outputs (large files)
 my_custom_model/
 */positive_train/

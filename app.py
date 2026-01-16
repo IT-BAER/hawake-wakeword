@@ -35,8 +35,12 @@ st.title("OpenWakeWord Custom Model Trainer")
 # --- Sidebar Configuration ---
 st.sidebar.header("Configuration")
 
-target_word = st.sidebar.text_input("Target Wakeword", value="hey_schpustee")
-model_name = target_word.replace(" ", "_")
+target_word = st.sidebar.text_input("Target Wakeword", value="", placeholder="e.g. hey jarvis")
+model_name = target_word.replace(" ", "_") if target_word else ""
+
+# Show warning if no wake word entered
+if not target_word.strip():
+    st.sidebar.warning("⚠️ Enter a wake word to begin")
 
 st.sidebar.subheader("Training Parameters")
 number_of_examples = st.sidebar.slider("Number of Examples", min_value=100, max_value=50000, value=5000, step=100, help="How many synthetic examples to generate. More is generally better but takes longer.")
@@ -115,9 +119,11 @@ else:
 st.header("1. Wake Word Preview")
 st.markdown("Listen to how the synthetic voice pronounces your wake word. Adjust the spelling (e.g., phonetic spelling) until it sounds right.")
 
-if st.button("Generate Preview"):
+if st.button("Generate Preview", disabled=not target_word.strip()):
     if not PIPER_AVAILABLE:
         st.error("Piper generator is not available. Please check dependencies.")
+    elif not target_word.strip():
+        st.error("Please enter a wake word first!")
     else:
         with st.spinner("Generating preview..."):
             preview_dir = current_dir / "preview_temp"
@@ -266,13 +272,16 @@ else:
 if 'start_training_trigger' not in st.session_state:
     st.session_state.start_training_trigger = False
 
-# Disable Start button if already training
-start_disabled = st.session_state.training_running
+# Disable Start button if already training or no wake word entered
+start_disabled = st.session_state.training_running or not target_word.strip()
 if st.button("Start Training", disabled=start_disabled):
-    # Mark training as running and trigger rerun to disable button immediately
-    st.session_state.training_running = True
-    st.session_state.start_training_trigger = True
-    st.rerun()
+    if not target_word.strip():
+        st.error("Please enter a wake word first!")
+    else:
+        # Mark training as running and trigger rerun to disable button immediately
+        st.session_state.training_running = True
+        st.session_state.start_training_trigger = True
+        st.rerun()
 
 # Actual training logic runs after rerun (button is now disabled)
 if st.session_state.start_training_trigger:

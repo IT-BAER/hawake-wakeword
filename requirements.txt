@@ -18,5 +18,8 @@ datasets==2.14.6
 deep-phonemizer==0.0.19
 scipy
 tqdm
+
+# TTS for preview/synthetic audio generation
+piper-tts>=1.2.0
 pyyaml
 webrtcvad-wheels

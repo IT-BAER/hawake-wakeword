@@ -14,10 +14,11 @@ onnx
 onnx_graphsurgeon
 sng4onnx
 pronouncing==0.2.0
-datasets==2.14.6
+datasets>=4.0.0
 deep-phonemizer==0.0.19
 scipy>=1.7.0,<1.14.0  # Pin to avoid sph_harm removal in 1.14+
 tqdm
+librosa>=0.10.0  # For audio resampling
 
 # TTS for preview/synthetic audio generation
 piper-tts>=1.2.0

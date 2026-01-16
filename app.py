@@ -55,29 +55,61 @@ st.sidebar.caption("ℹ️ Opset 11 is recommended for Android 8+ devices")
 def check_gpu_compatibility():
     """Checks if the GPU is actually usable for PyTorch operations."""
     import torch
+    
     if not torch.cuda.is_available():
-        return False, "CUDA not available."
+        return False, "CUDA not available (no GPU driver or PyTorch CPU-only build)"
     
     try:
-        # Try a small dummy operation that requires a kernel
+        # Get GPU info for better error messages
+        gpu_name = torch.cuda.get_device_name(0)
+        compute_cap = torch.cuda.get_device_capability(0)
+        compute_cap_str = f"{compute_cap[0]}.{compute_cap[1]}"
+        
+        # PyTorch 2.x typically requires compute capability 3.5+
+        # Very new GPUs (like RTX 50 series) might need newer PyTorch builds
+        if compute_cap[0] < 3 or (compute_cap[0] == 3 and compute_cap[1] < 5):
+            return False, f"{gpu_name} (compute {compute_cap_str}) - compute capability too low"
+        
+        # Try a small dummy operation that requires a CUDA kernel
         x = torch.tensor([1.0, 2.0]).cuda()
         y = x * 2
-        _ = y.cpu() # Sync
-        return True, "GPU is compatible."
+        _ = y.cpu()  # Sync to ensure kernel executed
+        
+        return True, f"{gpu_name} (compute {compute_cap_str})"
+    except RuntimeError as e:
+        error_msg = str(e).lower()
+        if "no kernel image" in error_msg or "arch" in error_msg:
+            return False, f"GPU detected but no kernel for this architecture. Try updating PyTorch or use CPU mode."
+        return False, f"GPU kernel test failed: {e}"
     except Exception as e:
-        return False, f"GPU detected but incompatible (e.g. no kernel image): {e}"
+        return False, f"GPU check failed: {e}"
 
 # Auto-detect GPU status
 gpu_ok, gpu_msg = check_gpu_compatibility()
 use_cpu_default = not gpu_ok
 
 st.sidebar.subheader("Hardware")
+
+# Show GPU detection result
 if gpu_ok:
-    st.sidebar.success(f"GPU Active: {gpu_msg}")
-    use_cpu = False
+    st.sidebar.success(f"✅ GPU Detected: {gpu_msg}")
 else:
-    st.sidebar.warning(f"Using CPU: {gpu_msg}")
-    use_cpu = True
+    st.sidebar.info(f"ℹ️ {gpu_msg}")
+
+# Manual override checkbox - always show it
+force_cpu = st.sidebar.checkbox(
+    "Force CPU Mode",
+    value=use_cpu_default,
+    help="Enable this if you have GPU issues (e.g., unsupported GPU architecture, driver problems). Training will be slower but more reliable."
+)
+
+# Determine final CPU/GPU usage
+use_cpu = force_cpu or not gpu_ok
+
+if use_cpu:
+    st.sidebar.warning("🖥️ Using CPU for training")
+else:
+    st.sidebar.success("⚡ Using GPU for training")
 
 # --- Preview Section ---
 st.header("1. Wake Word Preview")

@@ -83,23 +83,14 @@ def main():
     # Step 3: Install dependencies
     print_step("Installing dependencies (this may take a few minutes)...")
     
-    # Check for CUDA
-    cuda_available = False
-    try:
-        import torch
-        cuda_available = torch.cuda.is_available()
-    except ImportError:
-        pass
+    # First, detect if nvidia-smi is present (basic CUDA check)
+    nvidia_smi_available = run_cmd("nvidia-smi", check=False, capture=True) is not None
     
-    if not cuda_available:
-        # Try to detect CUDA from nvidia-smi
-        cuda_available = run_cmd("nvidia-smi", check=False, capture=True) is not None
-    
-    if cuda_available:
-        print_success("GPU detected - installing GPU-accelerated packages")
+    if nvidia_smi_available:
+        print_success("NVIDIA GPU detected - installing GPU-accelerated packages")
         run_cmd(f'"{pip_exe}" install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 -q')
     else:
-        print_warning("No GPU detected - using CPU (training will be slower)")
+        print_warning("No NVIDIA GPU detected - using CPU (training will be slower)")
         run_cmd(f'"{pip_exe}" install torch torchvision torchaudio -q')
     
     # Install remaining dependencies
@@ -113,7 +104,60 @@ def main():
     
     print_success("Dependencies installed")
     
-    # Step 4: Download Piper TTS model if needed
+    # Step 4: Verify GPU compatibility (after torch is installed)
+    print_step("Checking GPU compatibility...")
+    gpu_usable = False
+    gpu_msg = "CPU mode"
+    
+    if nvidia_smi_available:
+        # Run a test script to check if PyTorch can actually use the GPU
+        test_script = '''
+import torch
+import sys
+if not torch.cuda.is_available():
+    print("NO_CUDA")
+    sys.exit(1)
+try:
+    name = torch.cuda.get_device_name(0)
+    cap = torch.cuda.get_device_capability(0)
+    # Try actual CUDA operation
+    x = torch.tensor([1.0, 2.0]).cuda()
+    y = x * 2
+    _ = y.cpu()
+    print(f"OK|{name}|{cap[0]}.{cap[1]}")
+except RuntimeError as e:
+    if "no kernel image" in str(e).lower():
+        print(f"NO_KERNEL|{name if 'name' in dir() else 'Unknown'}|{e}")
+    else:
+        print(f"ERROR|{e}")
+except Exception as e:
+    print(f"ERROR|{e}")
+'''
+        result = run_cmd(f'"{python_exe}" -c "{test_script}"', capture=True, check=False)
+        
+        if result and result.startswith("OK|"):
+            parts = result.split("|")
+            gpu_name = parts[1] if len(parts) > 1 else "Unknown"
+            compute_cap = parts[2] if len(parts) > 2 else "?"
+            gpu_usable = True
+            gpu_msg = f"{gpu_name} (compute {compute_cap})"
+            print_success(f"GPU verified: {gpu_msg}")
+        elif result and result.startswith("NO_KERNEL"):
+            parts = result.split("|")
+            gpu_name = parts[1] if len(parts) > 1 else "Unknown"
+            print_warning(f"GPU {gpu_name} detected but CUDA kernels not available for this architecture")
+            print_warning("This can happen with very new GPUs. You can:")
+            print_warning("  1. Use CPU mode (checkbox in WebUI)")
+            print_warning("  2. Install a newer PyTorch nightly build")
+            gpu_msg = "CPU mode (GPU unsupported)"
+        else:
+            print_warning("GPU test failed - using CPU mode")
+            if result:
+                print_warning(f"  Details: {result}")
+    else:
+        print_success("Using CPU mode (no NVIDIA GPU)")
+    
+    # Step 5: Download Piper TTS model if needed
     piper_models_dir = script_dir / "piper-sample-generator" / "models"
     piper_model = piper_models_dir / "en_US-libritts_r-medium.pt"
     
@@ -132,7 +176,7 @@ def main():
     else:
         print_success("Piper TTS model exists")
     
-    # Step 5: Verify opset versions
+    # Step 6: Verify opset versions
     print_step("Verifying ONNX model compatibility...")
     try:
         result = run_cmd(f'"{python_exe}" check_opset.py', capture=True)
@@ -146,10 +190,10 @@ def main():
     # Final summary
     print(f"\n{GREEN}{BOLD}✅ Setup complete!{RESET}\n")
     
-    if cuda_available:
-        print(f"  GPU: {GREEN}Enabled{RESET}")
+    if gpu_usable:
+        print(f"  GPU: {GREEN}{gpu_msg}{RESET}")
     else:
-        print(f"  GPU: {YELLOW}Not detected (using CPU){RESET}")
+        print(f"  GPU: {YELLOW}{gpu_msg}{RESET}")
     
     print(f"\n{BOLD}To start the WebUI:{RESET}")
     print(f"  {CYAN}cd {script_dir}{RESET}")

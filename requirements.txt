@@ -16,7 +16,7 @@ sng4onnx
 pronouncing==0.2.0
 datasets==2.14.6
 deep-phonemizer==0.0.19
-scipy
+scipy>=1.7.0,<1.14.0  # Pin to avoid sph_harm removal in 1.14+
 tqdm
 
 # TTS for preview/synthetic audio generation

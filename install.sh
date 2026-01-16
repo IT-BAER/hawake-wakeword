@@ -78,6 +78,16 @@ for f in $TA_IO_FILE; do
     fi
 done
 
+# Patch speechbrain if needed (for torchaudio 2.1+ compatibility)
+SB_FILE=".venv/lib/python*/site-packages/speechbrain/utils/torch_audio_backend.py"
+for f in $SB_FILE; do
+    if [ -f "$f" ] && grep -q "torchaudio.set_audio_backend" "$f"; then
+        echo -e "${CYAN}[*] Patching speechbrain for torchaudio 2.1+ compatibility...${NC}"
+        sed -i 's/torchaudio\.set_audio_backend([^)]*)/pass  # Removed: torchaudio.set_audio_backend (deprecated in 2.1+)/g' "$f"
+        echo -e "${GREEN}[✓] Patched speechbrain${NC}"
+    fi
+done
+
 if [ -f "piper-sample-generator/requirements.txt" ]; then
     pip install -r piper-sample-generator/requirements.txt -q
 fi

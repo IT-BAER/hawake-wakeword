@@ -108,15 +108,23 @@ if ($hasGpu) {
 pip install -r requirements.txt -q
 pip install streamlit -q
 
-# Patch torch_audiomentations if needed (for torchaudio 2.1+ compatibility)
-$taIoFile = ".venv\Lib\site-packages\torch_audiomentations\utils\io.py"
-if (Test-Path $taIoFile) {
-    $content = Get-Content $taIoFile -Raw
+# Patch torch_audiomentations for torchaudio 2.1+ compatibility
+# In newer torchaudio versions, these functions were removed:
+# - torchaudio.set_audio_backend()
+# - torchaudio.USE_SOUNDFILE_LEGACY_INTERFACE
+# - torchaudio.info()
+Write-Host "[*] Checking torch_audiomentations compatibility..." -ForegroundColor Cyan
+python patch_torch_audiomentations.py
+
+# Patch speechbrain for torchaudio 2.1+ compatibility
+$sbFile = ".venv\Lib\site-packages\speechbrain\utils\torch_audio_backend.py"
+if (Test-Path $sbFile) {
+    $content = Get-Content $sbFile -Raw
     if ($content -match 'torchaudio\.set_audio_backend') {
-        Write-Host "[*] Patching torch_audiomentations for torchaudio 2.1+ compatibility..." -ForegroundColor Cyan
-        $patched = $content -replace 'torchaudio\.set_audio_backend\([^)]+\)', '# Removed: torchaudio.set_audio_backend (deprecated in 2.1+)'
-        Set-Content $taIoFile $patched
-        Write-Host "[✓] Patched torch_audiomentations" -ForegroundColor Green
+        Write-Host "[*] Patching speechbrain for torchaudio 2.1+ compatibility..." -ForegroundColor Cyan
+        $content = $content -replace 'torchaudio\.set_audio_backend\([^)]+\)', 'pass  # Removed: torchaudio.set_audio_backend (deprecated in 2.1+)'
+        Set-Content $sbFile $content -NoNewline
+        Write-Host "[✓] Patched speechbrain" -ForegroundColor Green
     }
 }
 

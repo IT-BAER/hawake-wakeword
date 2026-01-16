@@ -106,6 +106,21 @@ if not exist "%PIPER_CONFIG%" (
     )
 )
 
+REM Download Room Impulse Responses for audio augmentation
+if not exist "mit_rirs" (
+    echo [*] Downloading Room Impulse Responses (~10MB)...
+    echo     This improves training quality with realistic audio augmentation
+    python download_rirs.py
+    if exist "mit_rirs" (
+        echo [OK] RIR files downloaded
+    ) else (
+        echo [WARNING] Could not download RIR files
+        echo Training will still work, but audio augmentation will be limited
+    )
+) else (
+    echo [OK] RIR files exist
+)
+
 echo.
 echo ========================================
 echo   Setup Complete!

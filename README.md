@@ -24,6 +24,7 @@ The setup script automatically:
 - Detects GPU and verifies CUDA kernel compatibility
 - Installs appropriate PyTorch version (GPU or CPU)
 - Installs all dependencies
+- Downloads Room Impulse Responses for audio augmentation
 - Launches the WebUI at http://localhost:8501
 
 ## Uninstall

@@ -125,6 +125,21 @@ if (-not (Test-Path $piperConfig)) {
     }
 }
 
+# Download Room Impulse Responses for audio augmentation
+if (-not (Test-Path "mit_rirs") -or (Get-ChildItem "mit_rirs" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
+    Write-Host "[*] Downloading Room Impulse Responses (~10MB)..." -ForegroundColor Cyan
+    Write-Host "    This improves training quality with realistic audio augmentation" -ForegroundColor Gray
+    try {
+        python download_rirs.py
+        Write-Host "[✓] RIR files downloaded" -ForegroundColor Green
+    } catch {
+        Write-Host "[!] Could not download RIR files: $_" -ForegroundColor Yellow
+        Write-Host "    Training will still work, but audio augmentation will be limited" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[✓] RIR files exist" -ForegroundColor Green
+}
+
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "  Setup Complete!" -ForegroundColor Green

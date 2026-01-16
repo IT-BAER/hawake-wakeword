@@ -104,7 +104,19 @@ if [ ! -f "$PIPER_CONFIG" ]; then
         echo -e "${YELLOW}[!] Could not download config${NC}"
     fi
 fi
-
+# Download Room Impulse Responses for audio augmentation
+if [ ! -d "mit_rirs" ] || [ -z "$(ls -A mit_rirs 2>/dev/null)" ]; then
+    echo -e "${CYAN}[*] Downloading Room Impulse Responses (~10MB)...${NC}"
+    echo "    This improves training quality with realistic audio augmentation"
+    if python download_rirs.py; then
+        echo -e "${GREEN}[✓] RIR files downloaded${NC}"
+    else
+        echo -e "${YELLOW}[!] Could not download RIR files${NC}"
+        echo "    Training will still work, but audio augmentation will be limited"
+    fi
+else
+    echo -e "${GREEN}[✓] RIR files exist${NC}"
+fi
 echo ""
 echo -e "${GREEN}========================================"
 echo "  Setup Complete!"

@@ -1,13 +1,26 @@
 # HAwake WakeWord Training - Uninstall (PowerShell)
-# Usage: .\uninstall.ps1 [-Full] [-KeepVenv] [-Yes]
+# Usage: .\uninstall.ps1 [-Full | --full] [-KeepVenv | --keep-venv] [-Yes | -y]
 
 param(
     [switch]$Full,
     [switch]$KeepVenv,
     [switch]$Yes,
     [Alias('y')]
-    [switch]$Confirm
+    [switch]$Confirm,
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [string[]]$RemainingArgs
 )
+
+# Handle --full, --keep-venv, etc. from remaining args
+foreach ($arg in $RemainingArgs) {
+    switch ($arg) {
+        "--full" { $Full = $true }
+        "--keep-venv" { $KeepVenv = $true }
+        "--keep-trained" { $KeepTrained = $true }
+        "-y" { $Yes = $true }
+        "--yes" { $Yes = $true }
+    }
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -42,10 +55,11 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
 # Build arguments
-$args = @()
-if ($Full) { $args += "--full" }
-if ($KeepVenv) { $args += "--keep-venv" }
-if ($Yes -or $Confirm) { $args += "-y" }
+$pyArgs = @()
+if ($Full) { $pyArgs += "--full" }
+if ($KeepVenv) { $pyArgs += "--keep-venv" }
+if ($KeepTrained) { $pyArgs += "--keep-trained" }
+if ($Yes -or $Confirm) { $pyArgs += "-y" }
 
 # Run the uninstall script
-& $python uninstall.py @args
+& $python uninstall.py @pyArgs

@@ -162,33 +162,37 @@ except Exception as e:
     piper_model = piper_models_dir / "en_US-libritts_r-medium.onnx"
     piper_config = piper_models_dir / "en_US-libritts_r-medium.onnx.json"
     
-    if not piper_model.exists() or not piper_config.exists():
-        print_step("Downloading Piper TTS model (~65MB)...")
-        piper_models_dir.mkdir(parents=True, exist_ok=True)
-        
-        # ONNX model URLs from official Piper voices repository
-        model_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx"
-        config_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
-        
+    # ONNX model URLs from official Piper voices repository
+    model_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx"
+    config_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
+    
+    piper_models_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Download ONNX model if not present
+    if not piper_model.exists():
+        print_step("Downloading Piper TTS model (~75MB)...")
         try:
             import urllib.request
-            
-            if not piper_model.exists():
-                print_step("  Downloading ONNX model...")
-                urllib.request.urlretrieve(model_url, piper_model)
-            
-            if not piper_config.exists():
-                print_step("  Downloading config file...")
-                urllib.request.urlretrieve(config_url, piper_config)
-            
+            urllib.request.urlretrieve(model_url, piper_model)
             print_success("Piper TTS model downloaded")
         except Exception as e:
-            print_warning(f"Could not download model: {e}")
-            print_warning("You can download it manually from:")
-            print_warning(f"  Model: {model_url}")
-            print_warning(f"  Config: {config_url}")
+            print_error(f"Could not download model: {e}")
+            print_warning("Please download it manually from:")
+            print_warning(f"  {model_url}")
     else:
         print_success("Piper TTS model exists")
+    
+    # Download config file if not present
+    if not piper_config.exists():
+        print_step("Downloading Piper TTS config...")
+        try:
+            import urllib.request
+            urllib.request.urlretrieve(config_url, piper_config)
+            print_success("Piper TTS config downloaded")
+        except Exception as e:
+            print_warning(f"Could not download config: {e}")
+            print_warning("Please download it manually from:")
+            print_warning(f"  {config_url}")
     
     # Step 6: Verify opset versions
     print_step("Verifying ONNX model compatibility...")

@@ -19,6 +19,36 @@ try {
     exit 1
 }
 
+# Clone required repositories if not present
+Write-Host ""
+Write-Host "[*] Checking required repositories..." -ForegroundColor Cyan
+
+# Clone OpenWakeWord if needed
+if (-not (Test-Path "openwakeword")) {
+    Write-Host "[*] Cloning openwakeword repository..." -ForegroundColor Cyan
+    git clone https://github.com/dscripka/openwakeword.git openwakeword
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[✗] Failed to clone openwakeword!" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[✓] OpenWakeWord cloned" -ForegroundColor Green
+} else {
+    Write-Host "[✓] OpenWakeWord repository exists" -ForegroundColor Green
+}
+
+# Clone piper-sample-generator if needed
+if (-not (Test-Path "piper-sample-generator")) {
+    Write-Host "[*] Cloning piper-sample-generator repository..." -ForegroundColor Cyan
+    git clone https://github.com/rhasspy/piper-sample-generator.git piper-sample-generator
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[✗] Failed to clone piper-sample-generator!" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "[✓] Piper sample generator cloned" -ForegroundColor Green
+} else {
+    Write-Host "[✓] Piper sample generator exists" -ForegroundColor Green
+}
+
 # Create venv if not exists
 if (-not (Test-Path ".venv")) {
     Write-Host "[*] Creating virtual environment..." -ForegroundColor Cyan
@@ -56,6 +86,43 @@ pip install streamlit -q
 
 if (Test-Path "piper-sample-generator\requirements.txt") {
     pip install -r piper-sample-generator\requirements.txt -q
+}
+
+# Download Piper TTS ONNX model if not present
+$piperModelDir = "piper-sample-generator\models"
+$piperModel = "$piperModelDir\en_US-libritts_r-medium.onnx"
+$piperConfig = "$piperModelDir\en_US-libritts_r-medium.onnx.json"
+
+# Create models directory if needed
+if (-not (Test-Path $piperModelDir)) {
+    New-Item -ItemType Directory -Path $piperModelDir -Force | Out-Null
+}
+
+# Download ONNX model
+if (-not (Test-Path $piperModel)) {
+    Write-Host "[*] Downloading Piper TTS model (~75MB)..." -ForegroundColor Cyan
+    $modelUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx"
+    try {
+        Invoke-WebRequest -Uri $modelUrl -OutFile $piperModel -UseBasicParsing
+        Write-Host "[✓] Piper TTS model downloaded" -ForegroundColor Green
+    } catch {
+        Write-Host "[!] Could not download Piper model: $_" -ForegroundColor Yellow
+        Write-Host "    Please download manually from: $modelUrl" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[✓] Piper TTS model exists" -ForegroundColor Green
+}
+
+# Download config file
+if (-not (Test-Path $piperConfig)) {
+    Write-Host "[*] Downloading Piper TTS config..." -ForegroundColor Cyan
+    $configUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
+    try {
+        Invoke-WebRequest -Uri $configUrl -OutFile $piperConfig -UseBasicParsing
+        Write-Host "[✓] Piper TTS config downloaded" -ForegroundColor Green
+    } catch {
+        Write-Host "[!] Could not download config: $_" -ForegroundColor Yellow
+    }
 }
 
 Write-Host ""

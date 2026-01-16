@@ -17,6 +17,38 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+REM Clone required repositories if not present
+echo.
+echo [*] Checking required repositories...
+
+REM Clone OpenWakeWord if needed
+if not exist "openwakeword" (
+    echo [*] Cloning openwakeword repository...
+    git clone https://github.com/dscripka/openwakeword.git openwakeword
+    if %errorlevel% neq 0 (
+        echo [ERROR] Failed to clone openwakeword!
+        pause
+        exit /b 1
+    )
+    echo [OK] OpenWakeWord cloned
+) else (
+    echo [OK] OpenWakeWord repository exists
+)
+
+REM Clone piper-sample-generator if needed
+if not exist "piper-sample-generator" (
+    echo [*] Cloning piper-sample-generator repository...
+    git clone https://github.com/rhasspy/piper-sample-generator.git piper-sample-generator
+    if %errorlevel% neq 0 (
+        echo [ERROR] Failed to clone piper-sample-generator!
+        pause
+        exit /b 1
+    )
+    echo [OK] Piper sample generator cloned
+) else (
+    echo [OK] Piper sample generator exists
+)
+
 REM Create venv if not exists
 if not exist ".venv" (
     echo [*] Creating virtual environment...
@@ -42,6 +74,36 @@ pip install streamlit -q
 
 if exist "piper-sample-generator\requirements.txt" (
     pip install -r piper-sample-generator\requirements.txt -q
+)
+
+REM Download Piper TTS model if not present
+set PIPER_MODEL=piper-sample-generator\models\en_US-libritts_r-medium.onnx
+set PIPER_CONFIG=piper-sample-generator\models\en_US-libritts_r-medium.onnx.json
+
+REM Create models directory
+if not exist "piper-sample-generator\models" mkdir piper-sample-generator\models
+
+REM Download ONNX model
+if not exist "%PIPER_MODEL%" (
+    echo [*] Downloading Piper TTS model (~75MB)...
+    curl -sL "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx" -o "%PIPER_MODEL%"
+    if exist "%PIPER_MODEL%" (
+        echo [OK] Piper TTS model downloaded
+    ) else (
+        echo [WARNING] Could not download Piper model
+        echo Please download manually from: https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx
+    )
+) else (
+    echo [OK] Piper TTS model exists
+)
+
+REM Download config file
+if not exist "%PIPER_CONFIG%" (
+    echo [*] Downloading Piper TTS config...
+    curl -sL "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json" -o "%PIPER_CONFIG%"
+    if exist "%PIPER_CONFIG%" (
+        echo [OK] Piper TTS config downloaded
+    )
 )
 
 echo.

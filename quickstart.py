@@ -68,6 +68,31 @@ def main():
         pip_exe = venv_dir / "bin" / "pip"
         activate_hint = "source .venv/bin/activate"
     
+    # Step 0: Clone required repositories if not present
+    print_step("Checking required repositories...")
+    
+    openwakeword_dir = script_dir / "openwakeword"
+    if not openwakeword_dir.exists():
+        print_step("Cloning openwakeword repository...")
+        if run_cmd("git clone https://github.com/dscripka/openwakeword.git openwakeword", check=False):
+            print_success("OpenWakeWord cloned")
+        else:
+            print_error("Failed to clone openwakeword!")
+            return
+    else:
+        print_success("OpenWakeWord repository exists")
+    
+    piper_dir = script_dir / "piper-sample-generator"
+    if not piper_dir.exists():
+        print_step("Cloning piper-sample-generator repository...")
+        if run_cmd("git clone https://github.com/rhasspy/piper-sample-generator.git piper-sample-generator", check=False):
+            print_success("Piper sample generator cloned")
+        else:
+            print_error("Failed to clone piper-sample-generator!")
+            return
+    else:
+        print_success("Piper sample generator exists")
+    
     # Step 1: Create venv if needed
     if not venv_dir.exists():
         print_step("Creating virtual environment...")

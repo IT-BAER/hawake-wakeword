@@ -2,6 +2,24 @@
 
 Custom OpenWakeWord training pipeline for generating wake word models compatible with [HAwake Android](https://github.com/IT-BAER/hawake-android).
 
+## Quick Start (One-Liner)
+
+### Windows
+```cmd
+git clone https://github.com/IT-BAER/hawake-wakeword.git && cd hawake-wakeword && install.bat
+```
+
+### Linux/macOS
+```bash
+git clone https://github.com/IT-BAER/hawake-wakeword.git && cd hawake-wakeword && chmod +x install.sh && ./install.sh
+```
+
+The setup script automatically:
+- Creates a virtual environment
+- Detects GPU and installs appropriate PyTorch version
+- Installs all dependencies
+- Launches the WebUI at http://localhost:8501
+
 ## Features
 
 - **Streamlit WebUI** - Easy-to-use interface for training custom wake words
@@ -15,7 +33,9 @@ Custom OpenWakeWord training pipeline for generating wake word models compatible
 - CUDA (optional, for GPU acceleration)
 - ~10GB disk space for training data
 
-## Quick Start
+## Manual Setup
+
+If you prefer manual installation:
 
 ### 1. Clone and Setup
 

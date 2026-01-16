@@ -17,6 +17,9 @@ venv/
 *.swp
 *.swo
 
+# Local AI instructions (not for repo)
+.github/copilot-instructions.md
+
 # Training outputs (large files)
 my_custom_model/
 */positive_train/

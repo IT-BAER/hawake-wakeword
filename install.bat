@@ -121,6 +121,23 @@ if not exist "mit_rirs" (
     echo [OK] RIR files exist
 )
 
+REM Download background audio data (required for training)
+if not exist "audioset_16k\*.wav" (
+    echo.
+    echo [*] Downloading background audio data (~3-5 GB)...
+    echo     This is required for training and may take 10-30 minutes
+    echo.
+    python download_data.py
+    if exist "audioset_16k\*.wav" (
+        echo [OK] Background audio downloaded
+    ) else (
+        echo [WARNING] Could not download background audio
+        echo Run 'python download_data.py' manually before training
+    )
+) else (
+    echo [OK] Background audio exists
+)
+
 echo.
 echo ========================================
 echo   Setup Complete!

@@ -25,7 +25,10 @@ The setup script automatically:
 - Installs appropriate PyTorch version (GPU or CPU)
 - Installs all dependencies
 - Downloads Room Impulse Responses for audio augmentation
+- Downloads background audio data (~3-5 GB) for training
 - Launches the WebUI at http://localhost:8501
+
+**Note:** First-time setup downloads ~3-5 GB of training data and may take 10-30 minutes.
 
 ## Uninstall
 
@@ -67,7 +70,7 @@ Example full cleanup:
 
 - Python 3.10+
 - CUDA (optional, for GPU acceleration)
-- ~10GB disk space for training data
+- ~10GB disk space (training data + models)
 
 ## Manual Setup
 

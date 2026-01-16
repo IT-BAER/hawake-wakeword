@@ -140,6 +140,24 @@ if (-not (Test-Path "mit_rirs") -or (Get-ChildItem "mit_rirs" -ErrorAction Silen
     Write-Host "[✓] RIR files exist" -ForegroundColor Green
 }
 
+# Download background audio data (required for training)
+if (-not (Test-Path "audioset_16k") -or (Get-ChildItem "audioset_16k" -Filter "*.wav" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
+    Write-Host "" -ForegroundColor Cyan
+    Write-Host "[*] Downloading background audio data (~3-5 GB)..." -ForegroundColor Cyan
+    Write-Host "    This is required for training and may take 10-30 minutes" -ForegroundColor Gray
+    Write-Host "" -ForegroundColor Gray
+    try {
+        python download_data.py
+        Write-Host "[✓] Background audio downloaded" -ForegroundColor Green
+    } catch {
+        Write-Host "[!] Could not download background audio: $_" -ForegroundColor Yellow
+        Write-Host "    Run 'python download_data.py' manually before training" -ForegroundColor Yellow
+    }
+} else {
+    $audiosetCount = (Get-ChildItem "audioset_16k" -Filter "*.wav" | Measure-Object).Count
+    Write-Host "[✓] Background audio exists ($audiosetCount files)" -ForegroundColor Green
+}
+
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "  Setup Complete!" -ForegroundColor Green

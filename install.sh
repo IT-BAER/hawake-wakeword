@@ -117,6 +117,24 @@ if [ ! -d "mit_rirs" ] || [ -z "$(ls -A mit_rirs 2>/dev/null)" ]; then
 else
     echo -e "${GREEN}[✓] RIR files exist${NC}"
 fi
+
+# Download background audio data (required for training)
+if [ ! -d "audioset_16k" ] || [ -z "$(ls -A audioset_16k/*.wav 2>/dev/null)" ]; then
+    echo ""
+    echo -e "${CYAN}[*] Downloading background audio data (~3-5 GB)...${NC}"
+    echo "    This is required for training and may take 10-30 minutes"
+    echo ""
+    if python download_data.py; then
+        echo -e "${GREEN}[✓] Background audio downloaded${NC}"
+    else
+        echo -e "${YELLOW}[!] Could not download background audio${NC}"
+        echo "    Run 'python download_data.py' manually before training"
+    fi
+else
+    AUDIOSET_COUNT=$(ls -1 audioset_16k/*.wav 2>/dev/null | wc -l)
+    echo -e "${GREEN}[✓] Background audio exists ($AUDIOSET_COUNT files)${NC}"
+fi
+
 echo ""
 echo -e "${GREEN}========================================"
 echo "  Setup Complete!"

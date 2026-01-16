@@ -87,12 +87,12 @@ def main():
     
     print(f"\n{BOLD}🗑️  HAwake WakeWord Training - Uninstaller{RESET}\n")
     
-    # Identify what will be removed
-    items_to_remove = []
+    # Identify what will be removed - group by category
+    items_to_remove = []  # List of (name, path, is_directory)
     
     venv_dir = script_dir / ".venv"
     if venv_dir.exists() and not args.keep_venv:
-        items_to_remove.append(("Virtual environment", venv_dir))
+        items_to_remove.append(("Virtual environment (.venv)", venv_dir, True))
     
     # Cache directories (always clean these)
     cache_patterns = [
@@ -103,17 +103,17 @@ def main():
     for pattern, name in cache_patterns:
         path = script_dir / pattern
         if path.exists():
-            items_to_remove.append((name, path))
+            items_to_remove.append((name, path, True))
     
-    # Find all __pycache__ directories
-    for cache_dir in script_dir.rglob("__pycache__"):
-        if cache_dir.exists() and cache_dir not in [p for _, p in items_to_remove]:
-            items_to_remove.append(("Python cache", cache_dir))
-    
-    # Find .pyc files
-    for pyc_file in script_dir.rglob("*.pyc"):
-        if pyc_file.exists():
-            items_to_remove.append(("Compiled Python", pyc_file))
+    # Count __pycache__ directories (don't list individually)
+    pycache_dirs = list(script_dir.rglob("__pycache__"))
+    if pycache_dirs:
+        # Calculate total size
+        total_size = sum(
+            sum(f.stat().st_size for f in d.rglob('*') if f.is_file())
+            for d in pycache_dirs if d.exists()
+        )
+        items_to_remove.append((f"Python cache ({len(pycache_dirs)} __pycache__ dirs)", pycache_dirs, "pycache"))
     
     # Generated config files (always remove)
     generated_files = [
@@ -123,7 +123,7 @@ def main():
     for filename in generated_files:
         path = script_dir / filename
         if path.exists():
-            items_to_remove.append((f"Generated: {filename}", path))
+            items_to_remove.append((f"Generated: {filename}", path, False))
     
     # Full cleanup mode
     if args.full:
@@ -135,12 +135,12 @@ def main():
         for folder, name in cloned_repos:
             path = script_dir / folder
             if path.exists():
-                items_to_remove.append((name, path))
+                items_to_remove.append((name, path, True))
         
         # Downloaded RIR files
         rir_dir = script_dir / "mit_rirs"
         if rir_dir.exists():
-            items_to_remove.append(("RIR impulse responses", rir_dir))
+            items_to_remove.append(("RIR impulse responses", rir_dir, True))
         
         # Trained model output folders (unless --keep-trained)
         if not args.keep_trained:
@@ -150,6 +150,7 @@ def main():
                           "piper-sample-generator", "mit_rirs", "__pycache__",
                           "preview_temp", "docs", ".github"}
             
+            trained_models = []
             for path in script_dir.iterdir():
                 if path.is_dir() and path.name not in exclude_dirs:
                     # Check if it looks like a model output folder
@@ -159,21 +160,24 @@ def main():
                     has_negative = (path / "negative").exists()
                     
                     if has_onnx or has_checkpoints or has_positive or has_negative:
-                        items_to_remove.append((f"Trained model: {path.name}", path))
+                        trained_models.append(path)
+            
+            if trained_models:
+                for model_path in trained_models:
+                    items_to_remove.append((f"Trained model: {model_path.name}", model_path, True))
         
         # Generated ONNX files in root directory (not base models)
         base_models = {"melspectrogram.onnx", "embedding_model.onnx"}
-        for onnx_file in script_dir.glob("*.onnx"):
-            if onnx_file.name not in base_models:
-                items_to_remove.append((f"Generated model: {onnx_file.name}", onnx_file))
+        generated_onnx = [f for f in script_dir.glob("*.onnx") if f.name not in base_models]
+        if generated_onnx:
+            items_to_remove.append((f"Generated ONNX models ({len(generated_onnx)} files)", generated_onnx, "onnx"))
         
         # Downloaded Piper TTS models
         piper_models_dir = script_dir / "piper-sample-generator" / "models"
         if piper_models_dir.exists():
-            for onnx_file in piper_models_dir.glob("*.onnx"):
-                items_to_remove.append((f"Piper model: {onnx_file.name}", onnx_file))
-            for pt_file in piper_models_dir.glob("*.pt"):
-                items_to_remove.append((f"Piper model: {pt_file.name}", pt_file))
+            piper_files = list(piper_models_dir.glob("*.onnx")) + list(piper_models_dir.glob("*.pt"))
+            if piper_files:
+                items_to_remove.append((f"Piper TTS models ({len(piper_files)} files)", piper_files, "piper"))
     else:
         # Standard mode: also remove my_custom_model output directories
         output_patterns = [
@@ -184,7 +188,7 @@ def main():
         for pattern, name in output_patterns:
             path = script_dir / pattern
             if path.exists():
-                items_to_remove.append((name, path))
+                items_to_remove.append((name, path, True))
     
     if not items_to_remove:
         print_success("Nothing to uninstall - environment is clean!")
@@ -192,16 +196,40 @@ def main():
             print(f"\n{YELLOW}Tip:{RESET} Use {CYAN}--full{RESET} to also remove cloned repos, trained models, and downloads.")
         return
     
+    # Calculate total sizes for grouped items
+    def get_total_size(paths):
+        """Get total size for a list of paths"""
+        total = 0
+        if isinstance(paths, list):
+            for p in paths:
+                if p.is_file():
+                    total += p.stat().st_size
+                elif p.is_dir():
+                    for f in p.rglob('*'):
+                        if f.is_file():
+                            total += f.stat().st_size
+        else:
+            total = get_size_str(paths)
+            return total
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if total < 1024:
+                return f"{total:.1f} {unit}"
+            total /= 1024
+        return f"{total:.1f} TB"
+    
     # Show what will be removed
     print(f"{BOLD}The following will be removed:{RESET}\n")
-    total_size = 0
-    for name, path in items_to_remove:
-        size = get_size_str(path)
-        try:
-            rel_path = path.relative_to(script_dir)
-        except ValueError:
-            rel_path = path
-        print(f"  • {name}: {CYAN}{rel_path}{RESET} ({size})")
+    for name, path_or_list, item_type in items_to_remove:
+        if isinstance(path_or_list, list):
+            size = get_total_size(path_or_list)
+            print(f"  • {name} ({size})")
+        else:
+            size = get_size_str(path_or_list)
+            try:
+                rel_path = path_or_list.relative_to(script_dir)
+            except (ValueError, AttributeError):
+                rel_path = path_or_list
+            print(f"  • {name} ({size})")
     
     if not args.full:
         print(f"\n{YELLOW}Tip:{RESET} Use {CYAN}--full{RESET} to also remove cloned repos, trained models, and downloads.")
@@ -229,17 +257,34 @@ def main():
     
     # Remove items
     success_count = 0
-    for name, path in items_to_remove:
-        if path.is_file():
+    for name, path_or_list, item_type in items_to_remove:
+        if isinstance(path_or_list, list):
+            # Handle grouped items (pycache dirs, onnx files, piper models)
+            print_step(f"Removing {name}...")
+            removed = 0
+            for path in path_or_list:
+                try:
+                    if path.is_file():
+                        path.unlink()
+                        removed += 1
+                    elif path.is_dir():
+                        shutil.rmtree(path)
+                        removed += 1
+                except Exception:
+                    pass
+            if removed > 0:
+                print_success(f"Removed {name}")
+                success_count += 1
+        elif item_type == False:  # Single file
             print_step(f"Removing {name}...")
             try:
-                path.unlink()
+                path_or_list.unlink()
                 print_success(f"Removed {name}")
                 success_count += 1
             except Exception as e:
                 print_error(f"Failed to remove {name}: {e}")
-        elif path.is_dir():
-            if remove_directory(path, name):
+        elif item_type == True:  # Directory
+            if remove_directory(path_or_list, name):
                 success_count += 1
     
     print(f"\n{GREEN}{BOLD}✅ Uninstall complete!{RESET}")

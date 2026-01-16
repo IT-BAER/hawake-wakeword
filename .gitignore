@@ -1,0 +1,52 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+venv/
+.env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Training outputs (large files)
+my_custom_model/
+*/positive_train/
+*/positive_test/
+*/negative_train/
+*/negative_test/
+*_features_*.npy
+preview_temp/
+
+# Large data files
+audioset_16k/
+fma/
+mit_rirs/
+downloaded_models/
+openwakeword_features_*.npy
+validation_set_features.npy
+
+# Test/temp outputs
+test_model_output/
+hae_schpustee/
+nul
+
+# ONNX models in root (converted versions - keep in resources only)
+*.onnx
+!openwakeword/openwakeword/resources/models/*.onnx
+
+# Lock files (optional)
+uv.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+.github/copilot-instructions.md

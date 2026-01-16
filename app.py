@@ -314,6 +314,15 @@ if st.session_state.start_training_trigger:
         config["false_positive_validation_data_path"] = str(current_dir / "validation_set_features.npy")
         config["feature_data_files"] = {"ACAV100M_sample": str(current_dir / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy")}
         
+        # RIR paths - use empty list if folder doesn't exist (RIRs are optional but improve quality)
+        rir_dir = current_dir / "mit_rirs"
+        if rir_dir.exists() and any(rir_dir.iterdir()):
+            config["rir_paths"] = [str(rir_dir)]
+            st.info(f"✅ Using RIR files from {rir_dir}")
+        else:
+            config["rir_paths"] = []  # Empty list = no room impulse response augmentation
+            st.warning("⚠️ No RIR files found. Training will work but audio augmentation will be limited. Run `python download_rirs.py` to improve quality.")
+        
         # Write config
         config_path = current_dir / "my_model.yaml"
         with open(config_path, 'w') as f:
@@ -466,20 +475,29 @@ if st.session_state.start_training_trigger:
                     st.warning("Could not find embedding model or custom model for merging.")
             except Exception as e:
                 st.error(f"Merging failed: {e}")
-        
-        # ========================================
-        # TRAINING COMPLETE - Show final summary
-        # ========================================
-        st.balloons()
-        st.success("""🎉 **Training Complete!**
-        
+            
+            # ========================================
+            # TRAINING COMPLETE - Show final summary
+            # ========================================
+            st.balloons()
+            st.success("""🎉 **Training Complete!**
+            
 Your wake word model has been trained successfully. Download the models above:
 - **ONNX Model**: Standard FP32 precision model
 - **Merged Model**: Includes embedding layer for end-to-end inference""")
-        
-        # Show file locations
-        output_dir = Path(config["output_dir"])
-        st.info(f"📁 All models saved to: `{output_dir}`")
+            
+            # Show file locations
+            output_dir = Path(config["output_dir"])
+            st.info(f"📁 All models saved to: `{output_dir}`")
+        else:
+            # Training failed - show error summary
+            st.error("""❌ **Training Failed**
+            
+One or more steps failed. Check the training logs above for details.
+Common issues:
+- Missing RIR files: Run `python download_rirs.py` first
+- Missing background audio: Ensure audioset_16k folder exists
+- GPU issues: Try enabling "Force CPU Mode" in settings""")
         
         # Reset training state but DON'T rerun to keep results visible
         st.session_state.training_running = False

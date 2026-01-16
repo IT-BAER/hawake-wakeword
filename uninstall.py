@@ -137,10 +137,26 @@ def main():
             if path.exists():
                 items_to_remove.append((name, path, True))
         
-        # Downloaded RIR files
-        rir_dir = script_dir / "mit_rirs"
-        if rir_dir.exists():
-            items_to_remove.append(("RIR impulse responses", rir_dir, True))
+        # Downloaded data files
+        downloaded_data = [
+            ("mit_rirs", "RIR impulse responses"),
+            ("audioset_16k", "AudioSet background audio"),
+            ("fma", "FMA music samples"),
+        ]
+        for folder, name in downloaded_data:
+            path = script_dir / folder
+            if path.exists():
+                items_to_remove.append((name, path, True))
+        
+        # Large validation/feature files
+        large_files = [
+            ("validation_set_features.npy", "Validation features"),
+            ("openwakeword_features_ACAV100M_2000_hrs_16bit.npy", "ACAV100M feature data"),
+        ]
+        for filename, name in large_files:
+            path = script_dir / filename
+            if path.exists():
+                items_to_remove.append((name, path, False))
         
         # Trained model output folders (unless --keep-trained)
         if not args.keep_trained:

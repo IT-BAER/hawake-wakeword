@@ -88,16 +88,19 @@ def main():
     if venv_dir.exists() and not args.keep_venv:
         items_to_remove.append(("Virtual environment", venv_dir))
     
-    # Training output directories
+    # Training output directories (always clean these)
     output_patterns = [
         ("my_custom_model", "Training outputs"),
         ("preview_temp", "Preview cache"),
         ("openwakeword/openwakeword/my_custom_model", "OpenWakeWord outputs"),
-        ("__pycache__", "Python cache"),
-        ("openwakeword/__pycache__", "OpenWakeWord cache"),
-        ("openwakeword/openwakeword/__pycache__", "OpenWakeWord cache"),
         (".streamlit", "Streamlit cache"),
     ]
+    
+    # Also check for wake-word-specific output directories
+    for pattern in ["*_model", "hey_*", "ok_*", "alexa*"]:
+        for p in script_dir.glob(pattern):
+            if p.is_dir() and p.name not in [".venv", "openwakeword", "piper-sample-generator"]:
+                output_patterns.append((p.name, f"Generated: {p.name}"))
     
     for pattern, name in output_patterns:
         path = script_dir / pattern
@@ -109,16 +112,29 @@ def main():
         if cache_dir.exists() and cache_dir not in [p for _, p in items_to_remove]:
             items_to_remove.append(("Python cache", cache_dir))
     
-    # Full cleanup includes downloaded models
+    # Find .pyc files
+    for pyc_file in script_dir.rglob("*.pyc"):
+        if pyc_file.exists():
+            items_to_remove.append(("Compiled Python", pyc_file))
+    
+    # Full cleanup includes downloaded models and generated ONNX files
     if args.full:
         piper_models = script_dir / "piper-sample-generator" / "models"
         if piper_models.exists():
             items_to_remove.append(("Piper TTS models (downloaded)", piper_models))
         
         # Any generated .onnx files in root (not the base models)
+        base_models = ["melspectrogram.onnx", "embedding_model.onnx"]
         for onnx_file in script_dir.glob("*.onnx"):
-            if onnx_file.name not in ["melspectrogram.onnx", "embedding_model.onnx"]:
+            if onnx_file.name not in base_models:
                 items_to_remove.append((f"Generated model: {onnx_file.name}", onnx_file))
+        
+        # Also check openwakeword/resources/models for generated models
+        oww_models = script_dir / "openwakeword" / "openwakeword" / "resources" / "models"
+        if oww_models.exists():
+            for onnx_file in oww_models.glob("*.onnx"):
+                if onnx_file.name not in base_models:
+                    items_to_remove.append((f"OWW model: {onnx_file.name}", onnx_file))
     
     if not items_to_remove:
         print_success("Nothing to uninstall - environment is clean!")

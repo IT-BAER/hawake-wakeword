@@ -64,18 +64,40 @@ Write-Host "[*] Activating virtual environment..." -ForegroundColor Cyan
 
 Write-Host "[*] Installing dependencies (this may take a few minutes)..." -ForegroundColor Cyan
 
-# Check for GPU
+# Check for GPU and determine compute capability
 $hasGpu = $false
+$needsNightly = $false
+$computeCap = ""
 try {
-    $null = nvidia-smi 2>&1
-    $hasGpu = $LASTEXITCODE -eq 0
+    $gpuInfo = nvidia-smi --query-gpu=compute_cap,name --format=csv,noheader 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        $hasGpu = $true
+        $computeCap = ($gpuInfo -split ",")[0].Trim()
+        $gpuName = ($gpuInfo -split ",")[1].Trim()
+        
+        # Check if GPU is RTX 50-series (Blackwell, compute capability 12.0+)
+        # or RTX 40-series (Ada Lovelace, compute capability 8.9)
+        $majorCap = [int]($computeCap -split "\.")[0]
+        if ($majorCap -ge 12) {
+            $needsNightly = $true
+            Write-Host "[!] Detected $gpuName (compute $computeCap) - RTX 50-series/Blackwell detected" -ForegroundColor Yellow
+            Write-Host "    Using PyTorch nightly for best GPU support" -ForegroundColor Yellow
+        } else {
+            Write-Host "[✓] Detected $gpuName (compute $computeCap)" -ForegroundColor Green
+        }
+    }
 } catch {
     $hasGpu = $false
 }
 
 if ($hasGpu) {
-    Write-Host "[✓] GPU detected - installing CUDA-enabled PyTorch..." -ForegroundColor Green
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 -q
+    if ($needsNightly) {
+        Write-Host "[*] Installing PyTorch nightly with CUDA 12.8 (for RTX 50-series support)..." -ForegroundColor Cyan
+        pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128 -q
+    } else {
+        Write-Host "[✓] GPU detected - installing CUDA-enabled PyTorch..." -ForegroundColor Green
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 -q
+    }
 } else {
     Write-Host "[!] No GPU detected - using CPU version (training will be slower)" -ForegroundColor Yellow
     pip install torch torchvision torchaudio -q

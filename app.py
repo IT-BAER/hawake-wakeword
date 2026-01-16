@@ -309,10 +309,39 @@ if st.session_state.start_training_trigger:
         config["output_dir"] = str(current_dir / model_name)
         config["max_negative_weight"] = false_activation_penalty
         
-        # Paths
-        config["background_paths"] = [str(current_dir / 'audioset_16k'), str(current_dir / 'fma')]
+        # Background audio paths - filter to only existing directories with audio files
+        audioset_dir = current_dir / 'audioset_16k'
+        fma_dir = current_dir / 'fma'
+        background_paths = []
+        
+        if audioset_dir.exists() and any(audioset_dir.glob("*.wav")):
+            background_paths.append(str(audioset_dir))
+            st.info(f"✅ Using AudioSet background audio ({len(list(audioset_dir.glob('*.wav')))} files)")
+        
+        if fma_dir.exists() and any(fma_dir.glob("*.wav")):
+            background_paths.append(str(fma_dir))
+            st.info(f"✅ Using FMA background audio ({len(list(fma_dir.glob('*.wav')))} files)")
+        
+        if not background_paths:
+            st.error("❌ No background audio found! Please run `python download_data.py` first.")
+            st.stop()
+        
+        config["background_paths"] = background_paths
         config["false_positive_validation_data_path"] = str(current_dir / "validation_set_features.npy")
-        config["feature_data_files"] = {"ACAV100M_sample": str(current_dir / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy")}
+        
+        # Check validation file exists
+        if not (current_dir / "validation_set_features.npy").exists():
+            st.error("❌ Validation features not found! Please run `python download_data.py` first.")
+            st.stop()
+        
+        # Feature data files - use if available, otherwise empty (training will use background audio)
+        feature_file = current_dir / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+        if feature_file.exists():
+            config["feature_data_files"] = {"ACAV100M_sample": str(feature_file)}
+            st.info("✅ Using pre-computed feature file for improved training quality")
+        else:
+            config["feature_data_files"] = {}
+            st.warning("⚠️ Large feature file not found (~16GB). Training will work using AudioSet background audio.")
         
         # RIR paths - use empty list if folder doesn't exist (RIRs are optional but improve quality)
         rir_dir = current_dir / "mit_rirs"

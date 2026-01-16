@@ -52,23 +52,34 @@ def download_feature_files():
     print("Step 1: Downloading OpenWakeWord Feature Files")
     print("="*60)
     
-    features = [
-        ("openwakeword_features_ACAV100M_2000_hrs_16bit.npy", 
-         "https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy",
-         "Training features (~2GB)"),
-        ("validation_set_features.npy",
-         "https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/validation_set_features.npy",
-         "Validation features (~50MB)")
-    ]
+    # Validation set is smaller and required
+    val_file = "validation_set_features.npy"
+    val_url = "https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/validation_set_features.npy"
     
-    for filename, url, description in features:
-        if os.path.exists(filename):
-            print(f"[✓] {filename} already exists")
-        else:
-            if not download_with_progress(url, filename, description):
-                print(f"[✗] Failed to download {filename}")
-                return False
-            print(f"[✓] {filename} downloaded")
+    if os.path.exists(val_file):
+        print(f"[✓] {val_file} already exists")
+    else:
+        if not download_with_progress(val_url, val_file, "Validation features (~50MB)"):
+            print(f"[✗] Failed to download {val_file}")
+            return False
+        print(f"[✓] {val_file} downloaded")
+    
+    # Large training features file (16GB!) - make this optional
+    train_file = "openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+    train_url = "https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+    
+    if os.path.exists(train_file):
+        print(f"[✓] {train_file} already exists")
+    else:
+        print()
+        print("[!] Large training features file not found (~16GB download)")
+        print("    This file improves training quality but is optional.")
+        print()
+        print("    To download manually (recommended for best quality):")
+        print(f"    curl -L -o {train_file} {train_url}")
+        print()
+        print("    Training will still work without it, using AudioSet background audio.")
+        print()
     
     return True
 

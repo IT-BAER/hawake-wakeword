@@ -28,7 +28,12 @@ The setup script automatically:
 - Downloads background audio data (~3-5 GB) for training
 - Launches the WebUI at http://localhost:8501
 
-**Note:** First-time setup downloads ~3-5 GB of training data and may take 10-30 minutes.
+**Note:** First-time setup downloads ~1-2 GB of required training data and may take 10-20 minutes.
+
+> **Optional:** For best training quality, download the full feature file (~16GB) separately:
+> ```bash
+> curl -L -o openwakeword_features_ACAV100M_2000_hrs_16bit.npy https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy
+> ```
 
 ## Uninstall
 

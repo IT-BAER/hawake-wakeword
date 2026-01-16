@@ -108,6 +108,18 @@ if ($hasGpu) {
 pip install -r requirements.txt -q
 pip install streamlit -q
 
+# Patch torch_audiomentations if needed (for torchaudio 2.1+ compatibility)
+$taIoFile = ".venv\Lib\site-packages\torch_audiomentations\utils\io.py"
+if (Test-Path $taIoFile) {
+    $content = Get-Content $taIoFile -Raw
+    if ($content -match 'torchaudio\.set_audio_backend') {
+        Write-Host "[*] Patching torch_audiomentations for torchaudio 2.1+ compatibility..." -ForegroundColor Cyan
+        $patched = $content -replace 'torchaudio\.set_audio_backend\([^)]+\)', '# Removed: torchaudio.set_audio_backend (deprecated in 2.1+)'
+        Set-Content $taIoFile $patched
+        Write-Host "[✓] Patched torch_audiomentations" -ForegroundColor Green
+    }
+}
+
 if (Test-Path "piper-sample-generator\requirements.txt") {
     pip install -r piper-sample-generator\requirements.txt -q
 }

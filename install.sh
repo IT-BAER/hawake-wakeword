@@ -68,6 +68,16 @@ fi
 pip install -r requirements.txt -q
 pip install streamlit -q
 
+# Patch torch_audiomentations if needed (for torchaudio 2.1+ compatibility)
+TA_IO_FILE=".venv/lib/python*/site-packages/torch_audiomentations/utils/io.py"
+for f in $TA_IO_FILE; do
+    if [ -f "$f" ] && grep -q "torchaudio.set_audio_backend" "$f"; then
+        echo -e "${CYAN}[*] Patching torch_audiomentations for torchaudio 2.1+ compatibility...${NC}"
+        sed -i 's/torchaudio\.set_audio_backend([^)]*)/# Removed: torchaudio.set_audio_backend (deprecated in 2.1+)/g' "$f"
+        echo -e "${GREEN}[✓] Patched torch_audiomentations${NC}"
+    fi
+done
+
 if [ -f "piper-sample-generator/requirements.txt" ]; then
     pip install -r piper-sample-generator/requirements.txt -q
 fi

@@ -128,25 +128,30 @@ if st.button("Generate Preview"):
                 f.unlink()
 
             try:
-                # Use default model path from the repo structure
-                piper_model = piper_dir / "models" / "en_US-libritts_r-medium.pt"
+                # Use Piper ONNX model for TTS
+                piper_model = piper_dir / "models" / "en_US-libritts_r-medium.onnx"
                 
-                generate_samples(
-                    text=target_word,
-                    output_dir=str(preview_dir),
-                    max_samples=1,
-                    model=str(piper_model),
-                    batch_size=1,
-                    auto_reduce_batch_size=True,
-                    file_names=["preview.wav"]
-                )
-                
-                preview_file = preview_dir / "preview.wav"
-                if preview_file.exists():
-                    st.audio(str(preview_file))
-                    st.success("Preview generated!")
+                # Check if model exists
+                if not piper_model.exists():
+                    st.error(f"Piper TTS model not found at: {piper_model}")
+                    st.info("Please download the model first by running: python quickstart.py")
                 else:
-                    st.error("Failed to generate preview file.")
+                    generate_samples(
+                        text=target_word,
+                        output_dir=str(preview_dir),
+                        max_samples=1,
+                        model=str(piper_model),
+                        batch_size=1,
+                        auto_reduce_batch_size=True,
+                        file_names=["preview.wav"]
+                    )
+                    
+                    preview_file = preview_dir / "preview.wav"
+                    if preview_file.exists():
+                        st.audio(str(preview_file))
+                        st.success("Preview generated!")
+                    else:
+                        st.error("Failed to generate preview file.")
             except Exception as e:
                 st.error(f"Error during generation: {e}")
 

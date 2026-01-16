@@ -159,20 +159,34 @@ except Exception as e:
     
     # Step 5: Download Piper TTS model if needed
     piper_models_dir = script_dir / "piper-sample-generator" / "models"
-    piper_model = piper_models_dir / "en_US-libritts_r-medium.pt"
+    piper_model = piper_models_dir / "en_US-libritts_r-medium.onnx"
+    piper_config = piper_models_dir / "en_US-libritts_r-medium.onnx.json"
     
-    if not piper_model.exists():
-        print_step("Downloading Piper TTS model (~200MB)...")
+    if not piper_model.exists() or not piper_config.exists():
+        print_step("Downloading Piper TTS model (~65MB)...")
         piper_models_dir.mkdir(parents=True, exist_ok=True)
-        model_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/libritts_r/medium/en_US-libritts_r-medium.pt"
+        
+        # ONNX model URLs from official Piper voices repository
+        model_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx"
+        config_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
         
         try:
             import urllib.request
-            urllib.request.urlretrieve(model_url, piper_model)
+            
+            if not piper_model.exists():
+                print_step("  Downloading ONNX model...")
+                urllib.request.urlretrieve(model_url, piper_model)
+            
+            if not piper_config.exists():
+                print_step("  Downloading config file...")
+                urllib.request.urlretrieve(config_url, piper_config)
+            
             print_success("Piper TTS model downloaded")
         except Exception as e:
             print_warning(f"Could not download model: {e}")
-            print_warning("You can download it manually from: " + model_url)
+            print_warning("You can download it manually from:")
+            print_warning(f"  Model: {model_url}")
+            print_warning(f"  Config: {config_url}")
     else:
         print_success("Piper TTS model exists")
     

@@ -93,14 +93,16 @@ try {
 if ($hasGpu) {
     if ($needsNightly) {
         Write-Host "[*] Installing PyTorch nightly with CUDA 12.8 (for RTX 50-series support)..." -ForegroundColor Cyan
-        pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128 -q
+        Write-Host "    Note: PyTorch nightly is ~2.9GB - this may take 5-15 minutes" -ForegroundColor Gray
+        pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
     } else {
         Write-Host "[✓] GPU detected - installing CUDA-enabled PyTorch..." -ForegroundColor Green
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 -q
+        Write-Host "    Note: PyTorch is ~2.5GB - this may take a few minutes" -ForegroundColor Gray
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
     }
 } else {
     Write-Host "[!] No GPU detected - using CPU version (training will be slower)" -ForegroundColor Yellow
-    pip install torch torchvision torchaudio -q
+    pip install torch torchvision torchaudio
 }
 
 pip install -r requirements.txt -q

@@ -4,7 +4,12 @@ Custom OpenWakeWord training pipeline for generating wake word models compatible
 
 ## Quick Start (One-Liner)
 
-### Windows
+### Windows (PowerShell)
+```powershell
+git clone https://github.com/IT-BAER/hawake-wakeword.git; cd hawake-wakeword; .\install.ps1
+```
+
+### Windows (CMD)
 ```cmd
 git clone https://github.com/IT-BAER/hawake-wakeword.git && cd hawake-wakeword && install.bat
 ```

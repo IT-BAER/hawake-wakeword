@@ -1,6 +1,6 @@
 # HAwake WakeWord Training
 
-Custom OpenWakeWord training pipeline for generating wake word models compatible with [HAwake Android](https://github.com/IT-BAER/hawake-android).
+Custom OpenWakeWord training pipeline for generating wake word models compatible with [HAwake Android](https://play.google.com/store/apps/details?id=com.baer.hawake).
 
 ## Quick Start (One-Liner)
 

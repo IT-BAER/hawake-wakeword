@@ -115,6 +115,25 @@ if use_cpu:
 else:
     st.sidebar.success("⚡ Using GPU for training")
 
+# --- Resume/Checkpoint Options ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("Resume Options")
+resume_training = st.sidebar.checkbox(
+    "Resume Training",
+    value=True,
+    help="Skip already completed steps (generated clips, computed features). Uncheck to start fresh."
+)
+force_recompute = st.sidebar.checkbox(
+    "Force Recompute Features",
+    value=False,
+    disabled=not resume_training,
+    help="Recompute all audio features even if they exist. Useful if you changed augmentation settings."
+)
+if resume_training:
+    st.sidebar.caption("ℹ️ Will skip steps if outputs already exist")
+else:
+    st.sidebar.caption("⚠️ Will start fresh (delete existing outputs)")
+
 # --- Preview Section ---
 st.header("1. Wake Word Preview")
 st.markdown("Listen to how the synthetic voice pronounces your wake word. Adjust the spelling (e.g., phonetic spelling) until it sounds right.")
@@ -370,165 +389,219 @@ if st.session_state.start_training_trigger:
         if use_cpu:
             flags.append("--force_cpu")
 
-        # Add -u to python command for unbuffered output
-        steps = [
-            ("Generate Clips", [python_exe, "-u", train_script] + flags + ["--generate_clips"]),
-            ("Augment Clips", [python_exe, "-u", train_script] + flags + ["--augment_clips", "--overwrite"]),
-            ("Train Model", [python_exe, "-u", train_script] + flags + ["--train_model"])
+        # Output directory and feature file paths for resume detection
+        output_dir = Path(config["output_dir"])
+        feature_save_dir = output_dir / "features"
+        positive_train_dir = output_dir / "positive_train"
+        onnx_model_path = output_dir / f"{model_name}.onnx"
+        
+        # Feature files that indicate augment_clips is complete
+        feature_files = [
+            feature_save_dir / "positive_features_train.npy",
+            feature_save_dir / "negative_features_train.npy",
+            feature_save_dir / "positive_features_test.npy",
+            feature_save_dir / "negative_features_test.npy"
         ]
         
-        success = True
-        progress_bar = st.progress(0)
+        # Detect existing progress for resume mode
+        clips_exist = positive_train_dir.exists() and any(positive_train_dir.glob("*.wav"))
+        features_exist = all(f.exists() for f in feature_files)
+        model_exists = onnx_model_path.exists()
         
-        for i, (step_name, cmd_list) in enumerate(steps):
-            st.write(f"**Step {i+1}: {step_name}**...")
-            cmd_str = " ".join(cmd_list)
-            ret_code = run_command(cmd_str, log_placeholder)
+        # Show resume status
+        if resume_training:
+            st.markdown("### 📋 Resume Status")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if clips_exist:
+                    clip_count = len(list(positive_train_dir.glob("*.wav")))
+                    st.success(f"✅ Clips: {clip_count} found")
+                else:
+                    st.info("⏳ Clips: Not generated")
+            with col2:
+                if features_exist:
+                    st.success("✅ Features: Computed")
+                else:
+                    st.info("⏳ Features: Not computed")
+            with col3:
+                if model_exists:
+                    st.success("✅ Model: Exists")
+                else:
+                    st.info("⏳ Model: Not trained")
+        
+        # Build augment_clips flags
+        augment_flags = ["--augment_clips"]
+        if force_recompute or not resume_training:
+            augment_flags.append("--overwrite")
+        
+        # Build step list with skip logic
+        steps = []
+        
+        # Step 1: Generate Clips
+        if resume_training and clips_exist:
+            st.info(f"⏭️ Skipping 'Generate Clips' - {len(list(positive_train_dir.glob('*.wav')))} clips already exist")
+        else:
+            steps.append(("Generate Clips", [python_exe, "-u", train_script] + flags + ["--generate_clips"]))
+        
+        # Step 2: Augment Clips (compute features)
+        if resume_training and features_exist and not force_recompute:
+            st.info("⏭️ Skipping 'Augment Clips' - feature files already exist")
+        else:
+            steps.append(("Augment Clips", [python_exe, "-u", train_script] + flags + augment_flags))
+        
+        # Step 3: Train Model (always run if not skipping all)
+        # Even if model exists, user probably wants to retrain
+        steps.append(("Train Model", [python_exe, "-u", train_script] + flags + ["--train_model"]))
+        
+        if not steps:
+            st.warning("⚠️ All steps already completed! Disable 'Resume Training' to start fresh.")
+            st.session_state.training_running = False
+        else:
+            success = True
+            progress_bar = st.progress(0)
             
-            # Special handling for Train Model step:
-            # It might fail at the very end due to missing onnx_tf, but if the .onnx file exists, we are good.
-            if step_name == "Train Model" and ret_code != 0:
+            for i, (step_name, cmd_list) in enumerate(steps):
+                st.write(f"**Step {i+1}/{len(steps)}: {step_name}**...")
+                cmd_str = " ".join(cmd_list)
+                ret_code = run_command(cmd_str, log_placeholder)
+                
+                # Special handling for Train Model step:
+                # It might fail at the very end due to missing onnx_tf, but if the .onnx file exists, we are good.
+                if step_name == "Train Model" and ret_code != 0:
+                    onnx_path = Path(config["output_dir"]) / f"{model_name}.onnx"
+                    if onnx_path.exists():
+                        st.warning(f"Step {step_name} finished with errors (likely legacy TFLite conversion), but ONNX model was saved. Proceeding...")
+                        ret_code = 0
+                
+                if ret_code != 0:
+                    st.error(f"Step {step_name} failed with return code {ret_code}")
+                    success = False
+                    st.session_state.training_running = False
+                    # Show resume hint
+                    st.info("💡 **Tip:** Your progress has been saved. Fix the issue and click 'Start Training' again with 'Resume Training' enabled to continue from where you left off.")
+                    break
+                progress_bar.progress((i + 1) / len(steps))
+            
+            if success:
+                st.success("Training complete!")
+                
+                # Convert to TFLite (Optional but recommended)
+                st.write("**Step 4: Converting to TFLite...**")
                 onnx_path = Path(config["output_dir"]) / f"{model_name}.onnx"
                 if onnx_path.exists():
-                    st.warning(f"Step {step_name} finished with errors (likely legacy TFLite conversion), but ONNX model was saved. Proceeding...")
-                    ret_code = 0
-            
-            if ret_code != 0:
-                st.error(f"Step {step_name} failed with return code {ret_code}")
-                success = False
-                st.session_state.training_running = False
-                break
-            progress_bar.progress((i + 1) / len(steps))
-            
-        if success:
-            st.success("Training complete!")
-            
-            # Convert to TFLite (Optional but recommended)
-            st.write("**Step 4: Converting to TFLite...**")
-            onnx_path = Path(config["output_dir"]) / f"{model_name}.onnx"
-            if onnx_path.exists():
-                try:
-                    # Using onnx2tf command (assuming it's in path or can be run via python -m)
-                    # We'll try running it as a shell command
-                    cmd = f"onnx2tf -i \"{onnx_path}\" -o \"{config['output_dir']}\" -kat onnx____Flatten_0"
-                    run_command(cmd, log_placeholder)
-                    
-                    float32_tflite = Path(config["output_dir"]) / f"{model_name}_float32.tflite"
-                    final_tflite = Path(config["output_dir"]) / f"{model_name}.tflite"
-                    
-                    if float32_tflite.exists():
-                        if final_tflite.exists():
-                            final_tflite.unlink()
-                        float32_tflite.rename(final_tflite)
-                        st.success(f"TFLite model created: {final_tflite.name}")
+                    try:
+                        # Using onnx2tf command (assuming it's in path or can be run via python -m)
+                        # We'll try running it as a shell command
+                        cmd = f"onnx2tf -i \"{onnx_path}\" -o \"{config['output_dir']}\" -kat onnx____Flatten_0"
+                        run_command(cmd, log_placeholder)
                         
-                        # Download Button
-                        with open(final_tflite, "rb") as f:
-                            st.download_button(
-                                label="Download .tflite Model",
-                                data=f,
-                                file_name=f"{model_name}.tflite",
-                                mime="application/octet-stream"
-                            )
-                except Exception as e:
-                    st.warning(f"TFLite conversion failed: {e}")
-            
-            # Download ONNX Button
-            if onnx_path.exists():
-                # Patch ONNX for Android compatibility
+                        float32_tflite = Path(config["output_dir"]) / f"{model_name}_float32.tflite"
+                        final_tflite = Path(config["output_dir"]) / f"{model_name}.tflite"
+                        
+                        if float32_tflite.exists():
+                            if final_tflite.exists():
+                                final_tflite.unlink()
+                            float32_tflite.rename(final_tflite)
+                            st.success(f"TFLite model created: {final_tflite.name}")
+                            
+                            # Download Button
+                            with open(final_tflite, "rb") as f:
+                                st.download_button(
+                                    label="Download .tflite Model",
+                                    data=f,
+                                    file_name=f"{model_name}.tflite",
+                                    mime="application/octet-stream"
+                                )
+                    except Exception as e:
+                        st.warning(f"TFLite conversion failed: {e}")
+                
+                # Download ONNX Button
+                if onnx_path.exists():
+                    # Patch ONNX for Android compatibility
+                    try:
+                        model = onnx.load(str(onnx_path))
+                        patched = False
+                        
+                        # 1. Patch opset version if needed
+                        current_opset = model.opset_import[0].version
+                        if current_opset != onnx_opset:
+                            st.write(f"**Patching ONNX opset: {current_opset} → {onnx_opset}**")
+                            model.opset_import[0].version = onnx_opset
+                            patched = True
+                        
+                        # 2. Set IR version to 7 for ONNX Runtime Android compatibility
+                        # ONNX Runtime Android 1.14.0 only supports IR version <= 8
+                        if model.ir_version > 7:
+                            st.write(f"**Patching IR version: {model.ir_version} → 7**")
+                            model.ir_version = 7
+                            patched = True
+                        
+                        # 3. Remove unsupported 'allowzero' attribute from Reshape operators
+                        # This attribute was introduced in Opset 14 but isn't supported by older runtimes
+                        for node in model.graph.node:
+                            if node.op_type == 'Reshape':
+                                for attr in list(node.attribute):
+                                    if attr.name == 'allowzero':
+                                        node.attribute.remove(attr)
+                                        st.write(f"**Removed 'allowzero' from Reshape node: {node.name}**")
+                                        patched = True
+                        
+                        if patched:
+                            onnx.save(model, str(onnx_path))
+                            st.success(f"Model patched for Android compatibility (Opset {onnx_opset}, IR v7)")
+                        else:
+                            st.info(f"Model already compatible (Opset {onnx_opset}, IR v{model.ir_version})")
+                    except Exception as e:
+                        st.warning(f"Could not patch model: {e}")
+                    
+                    # Download FP32 model
+                    with open(onnx_path, "rb") as f:
+                        st.download_button(
+                            label=f"📥 Download Model (Opset {onnx_opset})",
+                            data=f,
+                            file_name=f"{model_name}.onnx",
+                            mime="application/octet-stream"
+                        )
+                
+                # Create Merged ONNX (End-to-End)
+                st.write("**Step 5: Creating Merged Model (Raw Audio -> Detection)...**")
                 try:
-                    model = onnx.load(str(onnx_path))
-                    patched = False
+                    emb_model_path = oww_dir / "openwakeword" / "resources" / "models" / "embedding_model.onnx"
+                    merged_output_path = Path(config["output_dir"]) / f"{model_name}_merged.onnx"
                     
-                    # 1. Patch opset version if needed
-                    current_opset = model.opset_import[0].version
-                    if current_opset != onnx_opset:
-                        st.write(f"**Patching ONNX opset: {current_opset} → {onnx_opset}**")
-                        model.opset_import[0].version = onnx_opset
-                        patched = True
-                    
-                    # 2. Set IR version to 7 for ONNX Runtime Android compatibility
-                    # ONNX Runtime Android 1.14.0 only supports IR version <= 8
-                    if model.ir_version > 7:
-                        st.write(f"**Patching IR version: {model.ir_version} → 7**")
-                        model.ir_version = 7
-                        patched = True
-                    
-                    # 3. Remove unsupported 'allowzero' attribute from Reshape operators
-                    # This attribute was introduced in Opset 14 but isn't supported by older runtimes
-                    for node in model.graph.node:
-                        if node.op_type == 'Reshape':
-                            for attr in list(node.attribute):
-                                if attr.name == 'allowzero':
-                                    node.attribute.remove(attr)
-                                    st.write(f"**Removed 'allowzero' from Reshape node: {node.name}**")
-                                    patched = True
-                    
-                    if patched:
-                        onnx.save(model, str(onnx_path))
-                        st.success(f"Model patched for Android compatibility (Opset {onnx_opset}, IR v7)")
+                    if emb_model_path.exists() and onnx_path.exists():
+                        merge_cmd = f"{python_exe} merge_models.py \"{emb_model_path}\" \"{onnx_path}\" \"{merged_output_path}\""
+                        run_command(merge_cmd, log_placeholder)
+                        
+                        if merged_output_path.exists():
+                            st.success(f"Merged model created: {merged_output_path.name}")
+                            with open(merged_output_path, "rb") as f:
+                                st.download_button(
+                                    label="Download Merged .onnx",
+                                    data=f,
+                                    file_name=f"{model_name}_merged.onnx",
+                                    mime="application/octet-stream"
+                                )
                     else:
-                        st.info(f"Model already compatible (Opset {onnx_opset}, IR v{model.ir_version})")
+                        st.warning("Could not find embedding model or custom model for merging.")
                 except Exception as e:
-                    st.warning(f"Could not patch model: {e}")
+                    st.error(f"Merging failed: {e}")
                 
-                # Download FP32 model
-                with open(onnx_path, "rb") as f:
-                    st.download_button(
-                        label=f"📥 Download Model (Opset {onnx_opset})",
-                        data=f,
-                        file_name=f"{model_name}.onnx",
-                        mime="application/octet-stream"
-                    )
-            
-            # Create Merged ONNX (End-to-End)
-            st.write("**Step 5: Creating Merged Model (Raw Audio -> Detection)...**")
-            try:
-                emb_model_path = oww_dir / "openwakeword" / "resources" / "models" / "embedding_model.onnx"
-                merged_output_path = Path(config["output_dir"]) / f"{model_name}_merged.onnx"
+                # ========================================
+                # TRAINING COMPLETE - Show final summary
+                # ========================================
+                st.balloons()
+                st.success("""🎉 **Training Complete!**
                 
-                if emb_model_path.exists() and onnx_path.exists():
-                    merge_cmd = f"{python_exe} merge_models.py \"{emb_model_path}\" \"{onnx_path}\" \"{merged_output_path}\""
-                    run_command(merge_cmd, log_placeholder)
-                    
-                    if merged_output_path.exists():
-                        st.success(f"Merged model created: {merged_output_path.name}")
-                        with open(merged_output_path, "rb") as f:
-                            st.download_button(
-                                label="Download Merged .onnx",
-                                data=f,
-                                file_name=f"{model_name}_merged.onnx",
-                                mime="application/octet-stream"
-                            )
-                else:
-                    st.warning("Could not find embedding model or custom model for merging.")
-            except Exception as e:
-                st.error(f"Merging failed: {e}")
-            
-            # ========================================
-            # TRAINING COMPLETE - Show final summary
-            # ========================================
-            st.balloons()
-            st.success("""🎉 **Training Complete!**
-            
 Your wake word model has been trained successfully. Download the models above:
 - **ONNX Model**: Standard FP32 precision model
 - **Merged Model**: Includes embedding layer for end-to-end inference""")
+                
+                # Show file locations
+                output_dir = Path(config["output_dir"])
+                st.info(f"📁 All models saved to: `{output_dir}`")
             
-            # Show file locations
-            output_dir = Path(config["output_dir"])
-            st.info(f"📁 All models saved to: `{output_dir}`")
-        else:
-            # Training failed - show error summary
-            st.error("""❌ **Training Failed**
-            
-One or more steps failed. Check the training logs above for details.
-Common issues:
-- Missing RIR files: Run `python download_rirs.py` first
-- Missing background audio: Ensure audioset_16k folder exists
-- GPU issues: Try enabling "Force CPU Mode" in settings""")
-        
-        # Reset training state but DON'T rerun to keep results visible
-        st.session_state.training_running = False
-        # Removed st.rerun() to keep the results visible!
+            # Reset training state but DON'T rerun to keep results visible
+            st.session_state.training_running = False
+            # Removed st.rerun() to keep the results visible!
 

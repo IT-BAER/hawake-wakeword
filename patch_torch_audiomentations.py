@@ -239,14 +239,14 @@ class Audio:
         file : AudioFile
             Audio file.
         sample_offset : int, optional
-            Start loading at this `sample_offset` sample. Defaults ot 0.
+            Start loading at this `sample_offset` sample (in target sample rate). Defaults to 0.
         num_samples : int, optional
-            Load that many samples. Defaults to load up to the end of the file.
+            Load that many samples (in target sample rate). Defaults to load up to the end of the file.
 
         Returns
         -------
-        samples : (time, channel) torch.Tensor
-            Samples
+        samples : (channel, time) torch.Tensor
+            Samples at target sample rate
 
         """
 
@@ -278,11 +278,30 @@ class Audio:
             else:
                 file = file["audio"]
 
+        # Get the original sample rate of the file to convert offsets
+        _, original_sample_rate = self.get_audio_metadata(file)
+        
+        # Convert sample_offset and num_samples from target to original sample rate
+        # This fixes a bug when background audio has different sample rate than target
+        original_sample_offset = int(sample_offset * original_sample_rate / self.sample_rate)
+        original_num_samples = int(num_samples * original_sample_rate / self.sample_rate) if num_samples else None
+        
         original_samples, sample_rate = torchaudio.load(
-            file, frame_offset=sample_offset, num_frames=num_samples or -1
+            file, frame_offset=original_sample_offset, num_frames=original_num_samples or -1
         )
 
-        return self.downmix_and_resample(original_samples, sample_rate)
+        result = self.downmix_and_resample(original_samples, sample_rate)
+        
+        # Ensure we return exactly the requested number of samples
+        # (compensate for any rounding errors in the conversion)
+        if num_samples is not None and result.shape[1] > num_samples:
+            result = result[:, :num_samples]
+        elif num_samples is not None and result.shape[1] < num_samples:
+            # Pad with zeros if we got fewer samples than expected
+            padding = torch.zeros(result.shape[0], num_samples - result.shape[1], device=result.device)
+            result = torch.cat([result, padding], dim=1)
+        
+        return result
 
 
 def read_audio(

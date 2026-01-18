@@ -49,6 +49,11 @@ def merge_onnx_models(embedding_model_path, custom_model_path, output_path):
     
     merged_model = helper.make_model(merged_graph, opset_imports=emb_model.opset_import)
     
+    # CRITICAL: Set IR version to 7 for ONNX Runtime Android 1.14.0 compatibility
+    # ONNX Runtime Android 1.14.0 only supports IR version <= 8
+    merged_model.ir_version = 7
+    print(f"  Set IR version to 7 for Android compatibility")
+    
     onnx.save(merged_model, output_path)
     print(f"Successfully merged to {output_path}")
 

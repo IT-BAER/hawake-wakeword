@@ -357,10 +357,11 @@ def patch_torch_audiomentations():
         print(f"[✓] torch_audiomentations already patched: {io_path}")
         return True
     
-    # Check if patch is needed
+    # Check if patch is needed - any of these indicate incompatibility with torchaudio 2.1+
     needs_patch = (
         "torchaudio.set_audio_backend" in content or
-        "torchaudio.USE_SOUNDFILE_LEGACY_INTERFACE" in content
+        "torchaudio.USE_SOUNDFILE_LEGACY_INTERFACE" in content or
+        "torchaudio.info(" in content  # torchaudio.info() was removed in 2.1+
     )
     
     if not needs_patch:

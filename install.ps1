@@ -116,6 +116,11 @@ pip install streamlit -q
 Write-Host "[*] Checking torch_audiomentations compatibility..." -ForegroundColor Cyan
 python patch_torch_audiomentations.py
 
+# Patch DeepPhonemizer (dp) for PyTorch 2.6+ compatibility
+# PyTorch 2.6 changed weights_only default to True, breaking checkpoint loading
+Write-Host "[*] Checking DeepPhonemizer compatibility..." -ForegroundColor Cyan
+python patch_dp.py
+
 # Patch speechbrain for torchaudio 2.1+ compatibility
 $sbFile = ".venv\Lib\site-packages\speechbrain\utils\torch_audio_backend.py"
 if (Test-Path $sbFile) {

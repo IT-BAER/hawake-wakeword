@@ -291,6 +291,52 @@ else:
 if 'start_training_trigger' not in st.session_state:
     st.session_state.start_training_trigger = False
 
+# --- Resume Status Section (shown BEFORE clicking Start) ---
+# Calculate output paths based on current model name
+preview_output_dir = current_dir / model_name
+preview_feature_dir = preview_output_dir / "features"
+preview_clips_dir = preview_output_dir / "positive_train"
+preview_onnx_path = preview_output_dir / f"{model_name}.onnx"
+
+# Feature files that indicate augment_clips is complete
+preview_feature_files = [
+    preview_feature_dir / "positive_features_train.npy",
+    preview_feature_dir / "negative_features_train.npy",
+    preview_feature_dir / "positive_features_test.npy",
+    preview_feature_dir / "negative_features_test.npy"
+]
+
+# Check what already exists
+preview_clips_exist = preview_clips_dir.exists() and any(preview_clips_dir.glob("*.wav"))
+preview_features_exist = all(f.exists() for f in preview_feature_files)
+preview_model_exists = preview_onnx_path.exists()
+
+# Show resume status if anything exists
+if preview_clips_exist or preview_features_exist or preview_model_exists:
+    st.markdown("### 📋 Existing Progress")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if preview_clips_exist:
+            clip_count = len(list(preview_clips_dir.glob("*.wav")))
+            st.success(f"✅ Clips: {clip_count} found")
+        else:
+            st.info("⏳ Clips: Not generated")
+    with col2:
+        if preview_features_exist:
+            st.success("✅ Features: Computed")
+        else:
+            st.info("⏳ Features: Not computed")
+    with col3:
+        if preview_model_exists:
+            st.success("✅ Model: Trained")
+        else:
+            st.info("⏳ Model: Not trained")
+    
+    if resume_training:
+        st.caption("ℹ️ **Resume enabled**: Will skip steps where outputs already exist")
+    else:
+        st.caption("⚠️ **Resume disabled**: Will start fresh and overwrite existing outputs")
+
 # Disable Start button if already training or no wake word entered
 start_disabled = st.session_state.training_running or not target_word.strip()
 if st.button("Start Training", disabled=start_disabled):
@@ -411,27 +457,6 @@ if st.session_state.start_training_trigger:
         clips_exist = positive_train_dir.exists() and any(positive_train_dir.glob("*.wav"))
         features_exist = all(f.exists() for f in feature_files)
         model_exists = onnx_model_path.exists()
-        
-        # Show resume status
-        if resume_training:
-            st.markdown("### 📋 Resume Status")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                if clips_exist:
-                    clip_count = len(list(positive_train_dir.glob("*.wav")))
-                    st.success(f"✅ Clips: {clip_count} found")
-                else:
-                    st.info("⏳ Clips: Not generated")
-            with col2:
-                if features_exist:
-                    st.success("✅ Features: Computed")
-                else:
-                    st.info("⏳ Features: Not computed")
-            with col3:
-                if model_exists:
-                    st.success("✅ Model: Exists")
-                else:
-                    st.info("⏳ Model: Not trained")
         
         # Build augment_clips flags
         augment_flags = ["--augment_clips"]

@@ -1,5 +1,13 @@
 # HAwake WakeWord Training - One-liner PowerShell Setup
 # Usage: git clone https://github.com/IT-BAER/hawake-wakeword.git; cd hawake-wakeword; .\install.ps1
+# Options:
+#   -Fast    Skip data downloads (use existing data or download later)
+#   -Minimal Skip optional dependencies
+
+param(
+    [switch]$Fast,
+    [switch]$Minimal
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -7,6 +15,12 @@ Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  HAwake WakeWord Training Setup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
+if ($Fast) {
+    Write-Host "  Mode: FAST (skipping data downloads)" -ForegroundColor Yellow
+}
+if ($Minimal) {
+    Write-Host "  Mode: MINIMAL (core dependencies only)" -ForegroundColor Yellow
+}
 Write-Host ""
 
 # Check Python
@@ -174,37 +188,44 @@ if (-not (Test-Path $piperConfig)) {
     }
 }
 
-# Download Room Impulse Responses for audio augmentation
-if (-not (Test-Path "mit_rirs") -or (Get-ChildItem "mit_rirs" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
-    Write-Host "[*] Downloading Room Impulse Responses (~10MB)..." -ForegroundColor Cyan
-    Write-Host "    This improves training quality with realistic audio augmentation" -ForegroundColor Gray
-    try {
-        python download_rirs.py
-        Write-Host "[✓] RIR files downloaded" -ForegroundColor Green
-    } catch {
-        Write-Host "[!] Could not download RIR files: $_" -ForegroundColor Yellow
-        Write-Host "    Training will still work, but audio augmentation will be limited" -ForegroundColor Yellow
-    }
+# Skip data downloads in Fast mode
+if ($Fast) {
+    Write-Host ""
+    Write-Host "[*] Fast mode: Skipping data downloads" -ForegroundColor Yellow
+    Write-Host "    Run 'python download_data.py' manually before training" -ForegroundColor Gray
 } else {
-    Write-Host "[✓] RIR files exist" -ForegroundColor Green
-}
+    # Download Room Impulse Responses for audio augmentation
+    if (-not (Test-Path "mit_rirs") -or (Get-ChildItem "mit_rirs" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
+        Write-Host "[*] Downloading Room Impulse Responses (~10MB)..." -ForegroundColor Cyan
+        Write-Host "    This improves training quality with realistic audio augmentation" -ForegroundColor Gray
+        try {
+            python download_rirs.py
+            Write-Host "[✓] RIR files downloaded" -ForegroundColor Green
+        } catch {
+            Write-Host "[!] Could not download RIR files: $_" -ForegroundColor Yellow
+            Write-Host "    Training will still work, but audio augmentation will be limited" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "[✓] RIR files exist" -ForegroundColor Green
+    }
 
-# Download background audio data (required for training)
-if (-not (Test-Path "audioset_16k") -or (Get-ChildItem "audioset_16k" -Filter "*.wav" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
-    Write-Host "" -ForegroundColor Cyan
-    Write-Host "[*] Downloading background audio data (~3-5 GB)..." -ForegroundColor Cyan
-    Write-Host "    This is required for training and may take 10-30 minutes" -ForegroundColor Gray
-    Write-Host "" -ForegroundColor Gray
-    try {
-        python download_data.py
-        Write-Host "[✓] Background audio downloaded" -ForegroundColor Green
-    } catch {
-        Write-Host "[!] Could not download background audio: $_" -ForegroundColor Yellow
-        Write-Host "    Run 'python download_data.py' manually before training" -ForegroundColor Yellow
+    # Download background audio data (required for training)
+    if (-not (Test-Path "audioset_16k") -or (Get-ChildItem "audioset_16k" -Filter "*.wav" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
+        Write-Host "" -ForegroundColor Cyan
+        Write-Host "[*] Downloading background audio data..." -ForegroundColor Cyan
+        Write-Host "    Using parallel downloads for faster completion" -ForegroundColor Gray
+        Write-Host "" -ForegroundColor Gray
+        try {
+            python download_data.py
+            Write-Host "[✓] Background audio downloaded" -ForegroundColor Green
+        } catch {
+            Write-Host "[!] Could not download background audio: $_" -ForegroundColor Yellow
+            Write-Host "    Run 'python download_data.py' manually before training" -ForegroundColor Yellow
+        }
+    } else {
+        $audiosetCount = (Get-ChildItem "audioset_16k" -Filter "*.wav" | Measure-Object).Count
+        Write-Host "[✓] Background audio exists ($audiosetCount files)" -ForegroundColor Green
     }
-} else {
-    $audiosetCount = (Get-ChildItem "audioset_16k" -Filter "*.wav" | Measure-Object).Count
-    Write-Host "[✓] Background audio exists ($audiosetCount files)" -ForegroundColor Green
 }
 
 Write-Host ""

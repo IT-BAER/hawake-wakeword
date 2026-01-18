@@ -105,21 +105,22 @@ def download_background_audio_simple():
     """Download background audio from HuggingFace AudioSet parquet files.
     
     The parquet files contain FLAC-encoded audio bytes which need to be decoded.
+    Uses parallel processing for faster downloads.
     """
     print("\n" + "="*60)
     print("Step 2: Downloading Background Audio")
     print("="*60)
-    
+
     output_dir = Path("audioset_16k")
-    
+
     # Check if already has content
     if output_dir.exists() and len(list(output_dir.glob("*.wav"))) >= 500:
         count = len(list(output_dir.glob("*.wav")))
         print(f"[✓] audioset_16k already has {count} files")
         return True
-    
+
     output_dir.mkdir(exist_ok=True)
-    
+
     try:
         import scipy.io.wavfile
         import numpy as np
@@ -129,85 +130,102 @@ def download_background_audio_simple():
         print(f"[!] Missing dependency: {e}")
         print("    Please run: pip install scipy numpy tqdm soundfile")
         return False
-    
+
     print("Downloading background audio from HuggingFace AudioSet...")
-    print("This may take a few minutes...")
-    
+    print("Using parallel downloads for speed...")
+
     try:
         import pyarrow.parquet as pq
         import io
         import requests
-        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         # Download multiple parquet files to get enough samples
         base_url = "https://huggingface.co/datasets/agkphysics/AudioSet/resolve/refs%2Fconvert%2Fparquet/balanced/train"
         parquet_files = [f"{base_url}/{i:04d}.parquet" for i in range(5)]  # First 5 files
-        
+
         count = 0
         max_clips = 2000
         errors = 0
         
-        for parquet_url in parquet_files:
-            if count >= max_clips:
-                break
-                
-            print(f"\nFetching: {parquet_url.split('/')[-1]}")
+        def download_parquet(url):
+            """Download a single parquet file."""
             try:
-                response = requests.get(parquet_url, timeout=120)
+                response = requests.get(url, timeout=120)
                 response.raise_for_status()
+                return url, response.content
             except Exception as e:
-                print(f"  [!] Failed to download: {e}")
-                continue
-            
-            # Read parquet into memory
-            parquet_bytes = io.BytesIO(response.content)
+                return url, None
+        
+        def process_parquet_bytes(parquet_content, start_count, max_count, output_dir):
+            """Process parquet bytes and extract audio files."""
+            parquet_bytes = io.BytesIO(parquet_content)
             table = pq.read_table(parquet_bytes)
             df = table.to_pandas()
             
-            print(f"  Processing {len(df)} audio samples...")
-            
-            for idx, row in tqdm(df.iterrows(), total=len(df), desc="  Decoding", leave=False):
-                if count >= max_clips:
+            count = 0
+            for idx, row in df.iterrows():
+                if start_count + count >= max_count:
                     break
                 try:
                     audio_data = row['audio']
                     if not isinstance(audio_data, dict) or 'bytes' not in audio_data:
                         continue
-                    
+
                     # Decode FLAC bytes using soundfile
                     audio_bytes = io.BytesIO(audio_data['bytes'])
                     audio, sr = sf.read(audio_bytes)
-                    
+
                     # Convert to mono if stereo
                     if len(audio.shape) > 1:
                         audio = audio.mean(axis=1)
-                    
+
                     # Resample to 16kHz if needed
                     if sr != 16000:
                         try:
                             import librosa
                             audio = librosa.resample(audio.astype(np.float32), orig_sr=sr, target_sr=16000)
                         except ImportError:
-                            # Skip if librosa not available and resampling needed
                             continue
-                    
+
                     # Normalize and convert to int16
-                    audio = audio / (np.abs(audio).max() + 1e-8)  # Normalize to -1, 1
+                    audio = audio / (np.abs(audio).max() + 1e-8)
                     audio = (audio * 32000).astype(np.int16)
-                    
+
                     # Save
                     name = f"audioset_{row['video_id']}.wav"
                     scipy.io.wavfile.write(output_dir / name, 16000, audio)
                     count += 1
-                except Exception as e:
-                    errors += 1
-                    if errors > 50:
-                        print(f"\n  [!] Too many errors, moving to next file")
-                        break
+                except Exception:
                     continue
+            return count
+
+        # Download parquet files in parallel
+        print(f"Downloading {len(parquet_files)} parquet files in parallel...")
+        downloaded_files = []
         
-        saved = len(list(output_dir.glob("*.wav")))
-        print(f"\n[✓] Saved {saved} audio files to audioset_16k/")
-        return saved > 0
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(download_parquet, url): url for url in parquet_files}
+            
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading"):
+                url, content = future.result()
+                if content:
+                    downloaded_files.append((url, content))
+                else:
+                    print(f"\n  [!] Failed to download: {url.split('/')[-1]}")
+        
+        # Process downloaded files sequentially
+        print(f"\nProcessing {len(downloaded_files)} parquet files...")
+        for url, content in downloaded_files:
+            if count >= max_clips:
+                break
+            
+            filename = url.split('/')[-1]
+            print(f"  Processing: {filename}")
+            
+            processed = process_parquet_bytes(content, count, max_clips, output_dir)
+            count += processed
+            print(f"    Extracted {processed} clips (total: {count})")
         
     except Exception as e:
         print(f"[!] Error with parquet download: {e}")

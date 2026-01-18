@@ -320,6 +320,12 @@ def main():
     if args.keep_venv:
         print_warning("Virtual environment was kept (--keep-venv flag)")
     
+    if args.full:
+        print(f"\n{YELLOW}Note:{RESET} The git repository folder (hawake-wakeword) was not removed.")
+        print(f"      You can delete it manually if no longer needed:")
+        print(f"      {CYAN}cd .. && rm -rf hawake-wakeword{RESET}  (Linux/Mac)")
+        print(f"      {CYAN}cd .. ; Remove-Item -Recurse -Force hawake-wakeword{RESET}  (PowerShell)")
+    
     print(f"\n{BOLD}To reinstall:{RESET}")
     print(f"  {CYAN}python quickstart.py{RESET}")
     print()

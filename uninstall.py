@@ -142,6 +142,7 @@ def main():
             ("mit_rirs", "RIR impulse responses"),
             ("audioset_16k", "AudioSet background audio"),
             ("fma", "FMA music samples"),
+            ("downloaded_models", "Downloaded models cache"),
         ]
         for folder, name in downloaded_data:
             path = script_dir / folder
@@ -157,6 +158,16 @@ def main():
             path = script_dir / filename
             if path.exists():
                 items_to_remove.append((name, path, False))
+        
+        # Pip cache directory (can be very large)
+        pip_cache_paths = [
+            Path.home() / "AppData" / "Local" / "pip" / "cache",  # Windows
+            Path.home() / ".cache" / "pip",  # Linux/Mac
+        ]
+        for pip_cache in pip_cache_paths:
+            if pip_cache.exists():
+                items_to_remove.append(("Pip download cache", pip_cache, True))
+                break  # Only add once
         
         # Trained model output folders (unless --keep-trained)
         if not args.keep_trained:

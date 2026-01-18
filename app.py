@@ -360,6 +360,10 @@ if st.session_state.start_training_trigger:
             st.info("✅ Using pre-computed feature file for improved training quality")
         else:
             config["feature_data_files"] = {}
+            # IMPORTANT: Remove ACAV100M_sample from batch_n_per_class since we don't have the feature file
+            # batch_n_per_class keys must match feature_data_files keys (plus positive/adversarial_negative)
+            if "batch_n_per_class" in config and "ACAV100M_sample" in config["batch_n_per_class"]:
+                del config["batch_n_per_class"]["ACAV100M_sample"]
             st.warning("⚠️ Large feature file not found (~16GB). Training will work using AudioSet background audio.")
         
         # RIR paths - use empty list if folder doesn't exist (RIRs are optional but improve quality)

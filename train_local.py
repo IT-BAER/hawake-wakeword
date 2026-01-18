@@ -46,7 +46,18 @@ def main():
     # Set data paths relative to project root
     config["background_paths"] = [str(project_root / 'audioset_16k'), str(project_root / 'fma')]
     config["false_positive_validation_data_path"] = str(project_root / "validation_set_features.npy")
-    config["feature_data_files"] = {"ACAV100M_sample": str(project_root / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy")}
+    
+    # Feature data files - use if available, otherwise empty
+    feature_file = project_root / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
+    if feature_file.exists():
+        config["feature_data_files"] = {"ACAV100M_sample": str(feature_file)}
+        print("✅ Using pre-computed feature file for improved training quality")
+    else:
+        config["feature_data_files"] = {}
+        # Remove ACAV100M_sample from batch_n_per_class since we don't have the feature file
+        if "batch_n_per_class" in config and "ACAV100M_sample" in config["batch_n_per_class"]:
+            del config["batch_n_per_class"]["ACAV100M_sample"]
+        print("⚠️ Large feature file not found (~16GB). Training will work using AudioSet background audio.")
 
     # Update generation config if needed
     # The piper generator might fail on Windows if dependencies are missing.

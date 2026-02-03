@@ -25,7 +25,7 @@ The setup script automatically:
 - Installs appropriate PyTorch version (GPU or CPU)
 - Installs all dependencies
 - Downloads Room Impulse Responses for audio augmentation
-- Downloads background audio data (~3-5 GB) for training
+- Downloads background audio data (~500MB–1GB) for training
 - Launches the WebUI at http://localhost:8501
 
 **Note:** First-time setup downloads ~1-2 GB of required training data and may take 10-20 minutes.
@@ -67,13 +67,13 @@ Example full cleanup:
 ## Features
 
 - **Streamlit WebUI** - Easy-to-use interface for training custom wake words
-- **ONNX Opset 11** - All models optimized for Android 8+ compatibility
+- **ONNX Opset 11** - Default opset for Android 8+ compatibility (selectable in WebUI)
 - **Piper TTS** - High-quality synthetic voice generation
 - **Auto-Patching** - Automatic IR version and attribute fixes for ONNX Runtime 1.14.0
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - CUDA (optional, for GPU acceleration)
 - ~10GB disk space (training data + models)
 
@@ -151,8 +151,8 @@ Or upload via the HAwake app's "Manage Wake Words" dialog.
 
 ## ONNX Compatibility
 
-All models are exported with:
-- **Opset 11** - Best Android 8+ compatibility
+Models are exported with:
+- **Selected Opset** (default 11) - Best Android 8+ compatibility
 - **IR Version 7** - Required for ONNX Runtime 1.14.0
 - **No `allowzero`** - Attribute removed from Reshape nodes
 

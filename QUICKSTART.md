@@ -3,10 +3,10 @@
 ## 🚀 Fast Installation (15-30 minutes vs 1+ hour)
 
 ### Pre-requisites
-- Python 3.10+ installed
+- Python 3.11+ installed
 - NVIDIA GPU recommended (CPU works but 5-10x slower)
 - 2-3 GB disk space for dependencies
-- 200 MB for training data (or use pre-bundled)
+- ~1–2 GB for training data (plus optional 16GB features)
 
 ### Option 1: Full Installation (Recommended for first time)
 ```powershell
@@ -25,8 +25,9 @@ python -m venv .venv
 # Install PyTorch (skip if already installed globally)
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install minimal requirements
-pip install streamlit pyyaml scipy numpy tqdm soundfile onnx librosa audiomentations
+# Install required dependencies
+pip install -r requirements.txt
+pip install streamlit
 
 # Install OpenWakeWord (editable)
 pip install -e openwakeword

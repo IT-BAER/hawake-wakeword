@@ -592,30 +592,6 @@ if st.session_state.start_training_trigger:
                             mime="application/octet-stream"
                         )
                 
-                # Create Merged ONNX (End-to-End)
-                st.write("**Step 5: Creating Merged Model (Raw Audio -> Detection)...**")
-                try:
-                    emb_model_path = oww_dir / "openwakeword" / "resources" / "models" / "embedding_model.onnx"
-                    merged_output_path = Path(config["output_dir"]) / f"{model_name}_merged.onnx"
-                    
-                    if emb_model_path.exists() and onnx_path.exists():
-                        merge_cmd = f"{python_exe} merge_models.py \"{emb_model_path}\" \"{onnx_path}\" \"{merged_output_path}\""
-                        run_command(merge_cmd, log_placeholder)
-                        
-                        if merged_output_path.exists():
-                            st.success(f"Merged model created: {merged_output_path.name}")
-                            with open(merged_output_path, "rb") as f:
-                                st.download_button(
-                                    label="Download Merged .onnx",
-                                    data=f,
-                                    file_name=f"{model_name}_merged.onnx",
-                                    mime="application/octet-stream"
-                                )
-                    else:
-                        st.warning("Could not find embedding model or custom model for merging.")
-                except Exception as e:
-                    st.error(f"Merging failed: {e}")
-                
                 # ========================================
                 # TRAINING COMPLETE - Show final summary
                 # ========================================
@@ -623,8 +599,7 @@ if st.session_state.start_training_trigger:
                 st.success("""🎉 **Training Complete!**
                 
 Your wake word model has been trained successfully. Download the models above:
-- **ONNX Model**: Standard FP32 precision model
-- **Merged Model**: Includes embedding layer for end-to-end inference""")
+- **ONNX Model**: Standard FP32 precision model""")
                 
                 # Show file locations
                 output_dir = Path(config["output_dir"])

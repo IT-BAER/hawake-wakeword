@@ -212,10 +212,10 @@ else
             else
                 echo -e "${YELLOW}[!] Reduced download failed. Generating synthetic background audio...${NC}"
                 python - <<'PY'
-    from download_data import download_background_audio_fallback
-    ok = download_background_audio_fallback()
-    raise SystemExit(0 if ok else 1)
-    PY
+from download_data import download_background_audio_fallback
+ok = download_background_audio_fallback()
+raise SystemExit(0 if ok else 1)
+PY
             fi
         fi
     else

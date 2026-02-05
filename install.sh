@@ -134,7 +134,11 @@ done
 
 if [ "$SKIP_PIPER_MODEL" != "1" ]; then
     if [ -f "piper-sample-generator/requirements.txt" ]; then
-        pip_install -r piper-sample-generator/requirements.txt
+        PIPER_REQ_TMP="$(mktemp)"
+        # Avoid torch/torchaudio pins that conflict with newer torch wheels
+        grep -vE '^(torch|torchaudio)\b' "piper-sample-generator/requirements.txt" > "$PIPER_REQ_TMP"
+        pip_install -r "$PIPER_REQ_TMP"
+        rm -f "$PIPER_REQ_TMP"
     fi
 else
     echo -e "${YELLOW}[!] SKIP_PIPER_MODEL=1 set - skipping piper-sample-generator requirements.${NC}"

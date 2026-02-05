@@ -142,10 +142,12 @@ def download_background_audio_simple():
 
         # Download multiple parquet files to get enough samples
         base_url = "https://huggingface.co/datasets/agkphysics/AudioSet/resolve/refs%2Fconvert%2Fparquet/balanced/train"
-        parquet_files = [f"{base_url}/{i:04d}.parquet" for i in range(5)]  # First 5 files
+        parquet_count = int(os.getenv("HAWAKE_AUDIOSET_PARQUET_FILES", "5"))
+        max_workers = int(os.getenv("HAWAKE_AUDIOSET_WORKERS", "3"))
+        max_clips = int(os.getenv("HAWAKE_AUDIOSET_MAX_CLIPS", "2000"))
+        parquet_files = [f"{base_url}/{i:04d}.parquet" for i in range(parquet_count)]
 
         count = 0
-        max_clips = 2000
         errors = 0
         
         def download_parquet(url):
@@ -201,10 +203,10 @@ def download_background_audio_simple():
             return count
 
         # Download parquet files in parallel
-        print(f"Downloading {len(parquet_files)} parquet files in parallel...")
+        print(f"Downloading {len(parquet_files)} parquet files in parallel (workers={max_workers}, max_clips={max_clips})...")
         downloaded_files = []
         
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(download_parquet, url): url for url in parquet_files}
             
             for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading"):

@@ -25,5 +25,6 @@ requests>=2.25.0  # For downloading data
 
 # TTS for preview/synthetic audio generation
 piper-tts>=1.2.0
+pathvalidate
 pyyaml
 webrtcvad-wheels

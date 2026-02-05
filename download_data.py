@@ -142,9 +142,10 @@ def download_background_audio_simple():
 
         # Download multiple parquet files to get enough samples
         base_url = "https://huggingface.co/datasets/agkphysics/AudioSet/resolve/refs%2Fconvert%2Fparquet/balanced/train"
-        parquet_count = int(os.getenv("HAWAKE_AUDIOSET_PARQUET_FILES", "5"))
-        max_workers = int(os.getenv("HAWAKE_AUDIOSET_WORKERS", "3"))
-        max_clips = int(os.getenv("HAWAKE_AUDIOSET_MAX_CLIPS", "2000"))
+        # Defaults are conservative to avoid OOM kills in WSL
+        parquet_count = int(os.getenv("HAWAKE_AUDIOSET_PARQUET_FILES", "2"))
+        max_workers = int(os.getenv("HAWAKE_AUDIOSET_WORKERS", "1"))
+        max_clips = int(os.getenv("HAWAKE_AUDIOSET_MAX_CLIPS", "1000"))
         parquet_files = [f"{base_url}/{i:04d}.parquet" for i in range(parquet_count)]
 
         count = 0

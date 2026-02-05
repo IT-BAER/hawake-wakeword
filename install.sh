@@ -206,8 +206,17 @@ else
         if python download_data.py; then
             echo -e "${GREEN}[✓] Background audio downloaded${NC}"
         else
-            echo -e "${YELLOW}[!] Could not download background audio${NC}"
-            echo "    Run 'python download_data.py' manually before training"
+            echo -e "${YELLOW}[!] Background audio download failed. Retrying with smaller settings...${NC}"
+            if HAWAKE_AUDIOSET_WORKERS=1 HAWAKE_AUDIOSET_PARQUET_FILES=1 HAWAKE_AUDIOSET_MAX_CLIPS=200 python download_data.py; then
+                echo -e "${GREEN}[✓] Background audio downloaded with reduced settings${NC}"
+            else
+                echo -e "${YELLOW}[!] Reduced download failed. Generating synthetic background audio...${NC}"
+                python - <<'PY'
+    from download_data import download_background_audio_fallback
+    ok = download_background_audio_fallback()
+    raise SystemExit(0 if ok else 1)
+    PY
+            fi
         fi
     else
         AUDIOSET_COUNT=$(ls -1 audioset_16k/*.wav 2>/dev/null | wc -l)

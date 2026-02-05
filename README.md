@@ -73,7 +73,7 @@ Example full cleanup:
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.11+ (Linux/WSL: use 3.11; Python 3.12 lacks piper-phonemize manylinux wheels and requires a source build)
 - CUDA (optional, for GPU acceleration)
 - ~10GB disk space (training data + models)
 

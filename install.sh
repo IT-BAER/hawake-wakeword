@@ -19,8 +19,40 @@ echo ""
 
 # Check Python
 if ! command -v python3 &> /dev/null; then
-    echo -e "${YELLOW}[!] Python3 not found! Please install Python 3.10+ first.${NC}"
+    echo -e "${YELLOW}[!] Python3 not found! Please install Python 3.11+ first.${NC}"
     exit 1
+fi
+
+PYTHON_BIN="python3"
+PY_MAJOR=$(python3 - <<'PY'
+import sys
+print(sys.version_info.major)
+PY
+)
+PY_MINOR=$(python3 - <<'PY'
+import sys
+print(sys.version_info.minor)
+PY
+)
+
+if [ "$PY_MAJOR" -lt 3 ] || [ "$PY_MAJOR" -eq 3 -a "$PY_MINOR" -lt 11 ]; then
+    if command -v python3.11 &> /dev/null; then
+        PYTHON_BIN="python3.11"
+        echo -e "${YELLOW}[!] python3 is $PY_MAJOR.$PY_MINOR; using python3.11 instead.${NC}"
+    else
+        echo -e "${YELLOW}[!] Python 3.11+ is required. Your python3 is $PY_MAJOR.$PY_MINOR.${NC}"
+        exit 1
+    fi
+fi
+
+if [ "$(uname -s)" = "Linux" ] && [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -eq 12 ]; then
+    if command -v python3.11 &> /dev/null; then
+        PYTHON_BIN="python3.11"
+        echo -e "${YELLOW}[!] Python 3.12 on Linux lacks piper-phonemize wheels; using python3.11 instead.${NC}"
+    else
+        echo -e "${YELLOW}[!] Python 3.12 on Linux lacks piper-phonemize wheels. Install python3.11 and python3.11-venv, then re-run.${NC}"
+        exit 1
+    fi
 fi
 
 # Clone required repositories if not present
@@ -48,25 +80,37 @@ fi
 # Create venv if not exists
 if [ ! -d ".venv" ]; then
     echo -e "${CYAN}[*] Creating virtual environment...${NC}"
-    python3 -m venv .venv
+    "$PYTHON_BIN" -m venv .venv
 fi
 
 # Activate
 source .venv/bin/activate
 
+PIP_TIMEOUT=${PIP_TIMEOUT:-120}
+PIP_RETRIES=${PIP_RETRIES:-5}
+FORCE_CPU=${FORCE_CPU:-0}
+SKIP_DATA_DOWNLOADS=${SKIP_DATA_DOWNLOADS:-0}
+SKIP_PIPER_MODEL=${SKIP_PIPER_MODEL:-0}
+pip_install() {
+    pip install --timeout "$PIP_TIMEOUT" --retries "$PIP_RETRIES" "$@" -q
+}
+
 echo -e "${CYAN}[*] Installing dependencies (this may take a few minutes)...${NC}"
 
 # Check for GPU
-if command -v nvidia-smi &> /dev/null; then
+if [ "$FORCE_CPU" = "1" ]; then
+    echo -e "${YELLOW}[!] FORCE_CPU=1 set - installing CPU PyTorch...${NC}"
+    pip_install torch torchvision torchaudio
+elif command -v nvidia-smi &> /dev/null; then
     echo -e "${GREEN}[✓] GPU detected - installing CUDA-enabled PyTorch...${NC}"
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 -q
+    pip_install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 else
     echo -e "${YELLOW}[!] No GPU detected - using CPU version (training will be slower)${NC}"
-    pip install torch torchvision torchaudio -q
+    pip_install torch torchvision torchaudio
 fi
 
-pip install -r requirements.txt -q
-pip install streamlit -q
+pip_install -r requirements.txt
+pip_install streamlit
 
 # Patch torch_audiomentations if needed (for torchaudio 2.1+ compatibility)
 TA_IO_FILE=".venv/lib/python*/site-packages/torch_audiomentations/utils/io.py"
@@ -89,7 +133,7 @@ for f in $SB_FILE; do
 done
 
 if [ -f "piper-sample-generator/requirements.txt" ]; then
-    pip install -r piper-sample-generator/requirements.txt -q
+    pip_install -r piper-sample-generator/requirements.txt
 fi
 
 # Download Piper TTS ONNX model if not present
@@ -100,59 +144,67 @@ PIPER_CONFIG="$PIPER_MODEL_DIR/en_US-libritts_r-medium.onnx.json"
 # Create models directory if needed
 mkdir -p "$PIPER_MODEL_DIR"
 
-# Download ONNX model
-if [ ! -f "$PIPER_MODEL" ]; then
-    echo -e "${CYAN}[*] Downloading Piper TTS model (~75MB)...${NC}"
-    MODEL_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx"
-    if curl -sL "$MODEL_URL" -o "$PIPER_MODEL"; then
-        echo -e "${GREEN}[✓] Piper TTS model downloaded${NC}"
-    else
-        echo -e "${YELLOW}[!] Could not download Piper model${NC}"
-        echo "    Please download manually from: $MODEL_URL"
-    fi
+if [ "$SKIP_PIPER_MODEL" = "1" ]; then
+    echo -e "${YELLOW}[!] SKIP_PIPER_MODEL=1 set - skipping Piper TTS model download.${NC}"
 else
-    echo -e "${GREEN}[✓] Piper TTS model exists${NC}"
-fi
+    # Download ONNX model
+    if [ ! -f "$PIPER_MODEL" ]; then
+        echo -e "${CYAN}[*] Downloading Piper TTS model (~75MB)...${NC}"
+        MODEL_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx"
+        if curl -sL "$MODEL_URL" -o "$PIPER_MODEL"; then
+            echo -e "${GREEN}[✓] Piper TTS model downloaded${NC}"
+        else
+            echo -e "${YELLOW}[!] Could not download Piper model${NC}"
+            echo "    Please download manually from: $MODEL_URL"
+        fi
+    else
+        echo -e "${GREEN}[✓] Piper TTS model exists${NC}"
+    fi
 
-# Download config file
-if [ ! -f "$PIPER_CONFIG" ]; then
-    echo -e "${CYAN}[*] Downloading Piper TTS config...${NC}"
-    CONFIG_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
-    if curl -sL "$CONFIG_URL" -o "$PIPER_CONFIG"; then
-        echo -e "${GREEN}[✓] Piper TTS config downloaded${NC}"
-    else
-        echo -e "${YELLOW}[!] Could not download config${NC}"
+    # Download config file
+    if [ ! -f "$PIPER_CONFIG" ]; then
+        echo -e "${CYAN}[*] Downloading Piper TTS config...${NC}"
+        CONFIG_URL="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
+        if curl -sL "$CONFIG_URL" -o "$PIPER_CONFIG"; then
+            echo -e "${GREEN}[✓] Piper TTS config downloaded${NC}"
+        else
+            echo -e "${YELLOW}[!] Could not download config${NC}"
+        fi
     fi
 fi
-# Download Room Impulse Responses for audio augmentation
-if [ ! -d "mit_rirs" ] || [ -z "$(ls -A mit_rirs 2>/dev/null)" ]; then
-    echo -e "${CYAN}[*] Downloading Room Impulse Responses (~10MB)...${NC}"
-    echo "    This improves training quality with realistic audio augmentation"
-    if python download_rirs.py; then
-        echo -e "${GREEN}[✓] RIR files downloaded${NC}"
-    else
-        echo -e "${YELLOW}[!] Could not download RIR files${NC}"
-        echo "    Training will still work, but audio augmentation will be limited"
-    fi
+if [ "$SKIP_DATA_DOWNLOADS" = "1" ]; then
+    echo -e "${YELLOW}[!] SKIP_DATA_DOWNLOADS=1 set - skipping RIR and background audio downloads.${NC}"
 else
-    echo -e "${GREEN}[✓] RIR files exist${NC}"
-fi
+    # Download Room Impulse Responses for audio augmentation
+    if [ ! -d "mit_rirs" ] || [ -z "$(ls -A mit_rirs 2>/dev/null)" ]; then
+        echo -e "${CYAN}[*] Downloading Room Impulse Responses (~10MB)...${NC}"
+        echo "    This improves training quality with realistic audio augmentation"
+        if python download_rirs.py; then
+            echo -e "${GREEN}[✓] RIR files downloaded${NC}"
+        else
+            echo -e "${YELLOW}[!] Could not download RIR files${NC}"
+            echo "    Training will still work, but audio augmentation will be limited"
+        fi
+    else
+        echo -e "${GREEN}[✓] RIR files exist${NC}"
+    fi
 
-# Download background audio data (required for training)
-if [ ! -d "audioset_16k" ] || [ -z "$(ls -A audioset_16k/*.wav 2>/dev/null)" ]; then
-    echo ""
-    echo -e "${CYAN}[*] Downloading background audio data (~3-5 GB)...${NC}"
-    echo "    This is required for training and may take 10-30 minutes"
-    echo ""
-    if python download_data.py; then
-        echo -e "${GREEN}[✓] Background audio downloaded${NC}"
+    # Download background audio data (required for training)
+    if [ ! -d "audioset_16k" ] || [ -z "$(ls -A audioset_16k/*.wav 2>/dev/null)" ]; then
+        echo ""
+        echo -e "${CYAN}[*] Downloading background audio data (~3-5 GB)...${NC}"
+        echo "    This is required for training and may take 10-30 minutes"
+        echo ""
+        if python download_data.py; then
+            echo -e "${GREEN}[✓] Background audio downloaded${NC}"
+        else
+            echo -e "${YELLOW}[!] Could not download background audio${NC}"
+            echo "    Run 'python download_data.py' manually before training"
+        fi
     else
-        echo -e "${YELLOW}[!] Could not download background audio${NC}"
-        echo "    Run 'python download_data.py' manually before training"
+        AUDIOSET_COUNT=$(ls -1 audioset_16k/*.wav 2>/dev/null | wc -l)
+        echo -e "${GREEN}[✓] Background audio exists ($AUDIOSET_COUNT files)${NC}"
     fi
-else
-    AUDIOSET_COUNT=$(ls -1 audioset_16k/*.wav 2>/dev/null | wc -l)
-    echo -e "${GREEN}[✓] Background audio exists ($AUDIOSET_COUNT files)${NC}"
 fi
 
 echo ""

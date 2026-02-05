@@ -132,8 +132,12 @@ for f in $SB_FILE; do
     fi
 done
 
-if [ -f "piper-sample-generator/requirements.txt" ]; then
-    pip_install -r piper-sample-generator/requirements.txt
+if [ "$SKIP_PIPER_MODEL" != "1" ]; then
+    if [ -f "piper-sample-generator/requirements.txt" ]; then
+        pip_install -r piper-sample-generator/requirements.txt
+    fi
+else
+    echo -e "${YELLOW}[!] SKIP_PIPER_MODEL=1 set - skipping piper-sample-generator requirements.${NC}"
 fi
 
 # Download Piper TTS ONNX model if not present

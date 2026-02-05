@@ -327,17 +327,26 @@ def download_feature_files():
         size_gb = os.path.getsize(train_file) / (1024 * 1024 * 1024)
         print(f"[✓] {train_file} already exists ({size_gb:.1f} GB)")
     else:
-        print()
-        print("[!] Large training features file not found (~16GB download)")
-        print("    This file significantly improves training quality.")
-        print()
-        print("    To download (recommended for best quality):")
-        print(f"    curl -L -o {train_file} {train_url}")
-        print()
-        print("    Or via browser: https://huggingface.co/datasets/davidscripka/openwakeword_features")
-        print()
-        print("    Training will still work without it using AudioSet background audio.")
-        print()
+        download_large = os.getenv("HAWAKE_DOWNLOAD_LARGE_FEATURES", "0") == "1"
+        if download_large:
+            print()
+            print("[!] Downloading large training features file (~16GB)...")
+            if not download_with_progress(train_url, train_file, "Training features (16GB)"):
+                print(f"[✗] Failed to download {train_file}")
+                return False
+            print(f"[✓] {train_file} downloaded")
+        else:
+            print()
+            print("[!] Large training features file not found (~16GB download)")
+            print("    This file significantly improves training quality.")
+            print()
+            print("    To download (recommended for best quality):")
+            print(f"    curl -L -o {train_file} {train_url}")
+            print("    Or set HAWAKE_DOWNLOAD_LARGE_FEATURES=1 when running download_data.py or install.sh")
+            print("    Or via browser: https://huggingface.co/datasets/davidscripka/openwakeword_features")
+            print()
+            print("    Training will still work without it using AudioSet background audio.")
+            print()
     
     return True
 

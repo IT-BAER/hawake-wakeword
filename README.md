@@ -34,6 +34,10 @@ The setup script automatically:
 > ```bash
 > curl -L -o openwakeword_features_ACAV100M_2000_hrs_16bit.npy https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy
 > ```
+> Or run the install/download with the flag enabled:
+> ```bash
+> HAWAKE_DOWNLOAD_LARGE_FEATURES=1 ./install.sh
+> ```
 
 ## Uninstall
 

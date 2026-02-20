@@ -36,7 +36,9 @@ st.title("OpenWakeWord Custom Model Trainer")
 st.sidebar.header("Configuration")
 
 target_word = st.sidebar.text_input("Target Wakeword", value="", placeholder="e.g. hey jarvis")
-model_name = target_word.replace(" ", "_") if target_word else ""
+# Sanitize model name: replace spaces with underscores, strip characters invalid on Windows
+import re as _re
+model_name = _re.sub(r'[\\/:*?"<>|]', '', target_word.replace(" ", "_")) if target_word else ""
 
 # Show warning if no wake word entered
 if not target_word.strip():

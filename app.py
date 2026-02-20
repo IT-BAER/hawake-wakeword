@@ -29,6 +29,8 @@ if 'training_running' not in st.session_state:
     st.session_state.training_running = False
 if 'training_pids' not in st.session_state:
     st.session_state.training_pids = []
+if 'training_error' not in st.session_state:
+    st.session_state.training_error = None
 
 st.title("OpenWakeWord Custom Model Trainer")
 
@@ -339,6 +341,14 @@ if preview_clips_exist or preview_features_exist or preview_model_exists:
     else:
         st.caption("⚠️ **Resume disabled**: Will start fresh and overwrite existing outputs")
 
+# Show persisted error from previous run (survives rerun)
+if st.session_state.training_error:
+    st.error(st.session_state.training_error)
+    st.info("💡 **Tip:** Your progress has been saved. Fix the issue and click 'Start Training' again with 'Resume Training' enabled to continue from where you left off.")
+    if st.button("Clear Error"):
+        st.session_state.training_error = None
+        st.rerun()
+
 # Disable Start button if already training or no wake word entered
 start_disabled = st.session_state.training_running or not target_word.strip()
 if st.button("Start Training", disabled=start_disabled):
@@ -347,6 +357,7 @@ if st.button("Start Training", disabled=start_disabled):
     else:
         # Mark training as running and trigger rerun to disable button immediately
         st.session_state.training_running = True
+        st.session_state.training_error = None
         st.session_state.start_training_trigger = True
         st.rerun()
 
@@ -505,11 +516,10 @@ if st.session_state.start_training_trigger:
                         ret_code = 0
                 
                 if ret_code != 0:
-                    st.error(f"Step {step_name} failed with return code {ret_code}")
                     success = False
                     st.session_state.training_running = False
-                    # Show resume hint
-                    st.info("💡 **Tip:** Your progress has been saved. Fix the issue and click 'Start Training' again with 'Resume Training' enabled to continue from where you left off.")
+                    st.session_state.training_error = f"Step '{step_name}' failed with return code {ret_code}. Check the training logs above for details."
+                    st.rerun()
                     break
                 progress_bar.progress((i + 1) / len(steps))
             

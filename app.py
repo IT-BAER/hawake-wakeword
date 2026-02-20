@@ -296,16 +296,16 @@ if 'start_training_trigger' not in st.session_state:
 # --- Resume Status Section (shown BEFORE clicking Start) ---
 # Calculate output paths based on current model name
 preview_output_dir = current_dir / model_name
-preview_feature_dir = preview_output_dir / "features"
 preview_clips_dir = preview_output_dir / "positive_train"
 preview_onnx_path = preview_output_dir / f"{model_name}.onnx"
 
 # Feature files that indicate augment_clips is complete
+# train.py saves features directly in output_dir (not a features/ subdir)
 preview_feature_files = [
-    preview_feature_dir / "positive_features_train.npy",
-    preview_feature_dir / "negative_features_train.npy",
-    preview_feature_dir / "positive_features_test.npy",
-    preview_feature_dir / "negative_features_test.npy"
+    preview_output_dir / "positive_features_train.npy",
+    preview_output_dir / "negative_features_train.npy",
+    preview_output_dir / "positive_features_test.npy",
+    preview_output_dir / "negative_features_test.npy"
 ]
 
 # Check what already exists
@@ -443,16 +443,16 @@ if st.session_state.start_training_trigger:
 
         # Output directory and feature file paths for resume detection
         output_dir = Path(config["output_dir"])
-        feature_save_dir = output_dir / "features"
         positive_train_dir = output_dir / "positive_train"
         onnx_model_path = output_dir / f"{model_name}.onnx"
-        
+
         # Feature files that indicate augment_clips is complete
+        # train.py saves features directly in output_dir (not a features/ subdir)
         feature_files = [
-            feature_save_dir / "positive_features_train.npy",
-            feature_save_dir / "negative_features_train.npy",
-            feature_save_dir / "positive_features_test.npy",
-            feature_save_dir / "negative_features_test.npy"
+            output_dir / "positive_features_train.npy",
+            output_dir / "negative_features_train.npy",
+            output_dir / "positive_features_test.npy",
+            output_dir / "negative_features_test.npy"
         ]
         
         # Detect existing progress for resume mode

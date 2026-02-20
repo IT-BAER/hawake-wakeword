@@ -23,7 +23,10 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 # Install PyTorch (skip if already installed globally)
+# RTX 20xx / 30xx / 40xx (CUDA 12.1):
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+# RTX 50xx / Blackwell (requires nightly, CUDA 12.8):
+# pip install --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 
 # Install required dependencies
 pip install -r requirements.txt
@@ -61,6 +64,7 @@ In the WebUI sidebar, use these settings for faster training:
 ### GPU vs CPU Training
 | GPU | Approximate Training Time |
 |-----|---------------------------|
+| RTX 5060 Ti / 50xx (nightly cu128) | 15-30 minutes |
 | RTX 4090 | 15-30 minutes |
 | RTX 3060 | 30-60 minutes |
 | GTX 1060 | 1-2 hours |
@@ -105,11 +109,16 @@ The 16GB `openwakeword_features_ACAV100M_2000_hrs_16bit.npy` is optional. Traini
 
 ## 🐛 Common Issues
 
-### "No CUDA devices available"
+### "No CUDA devices available" or "no kernel image for this device"
 ```powershell
 # Reinstall PyTorch with CUDA
-pip uninstall torch torchaudio torchvision
+pip uninstall torch torchaudio torchvision -y
+
+# RTX 20xx / 30xx / 40xx:
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# RTX 50xx / Blackwell (sm_120) — requires PyTorch nightly:
+pip install --pre torch torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
 ```
 
 ### "weights_only" Error

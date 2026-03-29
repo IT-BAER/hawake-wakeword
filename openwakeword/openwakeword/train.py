@@ -16,7 +16,7 @@ from tqdm import tqdm
 import yaml
 from pathlib import Path
 import openwakeword
-from openwakeword.data import generate_adversarial_texts, augment_clips, mmap_batch_generator
+from openwakeword.data import generate_adversarial_texts, generate_adversarial_texts_german, augment_clips, mmap_batch_generator
 from openwakeword.utils import compute_features_from_generator
 from openwakeword.utils import AudioFeatures
 
@@ -66,25 +66,25 @@ class Model(nn.Module):
                 def __init__(self, layer_dim):
                     super().__init__()
                     self.fcn_layer = nn.Linear(layer_dim, layer_dim)
+                    self.batch_norm = nn.BatchNorm1d(layer_dim)
                     self.relu = nn.ReLU()
-                    # self.layer_norm = nn.LayerNorm(layer_dim)
 
                 def forward(self, x):
-                    return self.relu(self.fcn_layer(x))
+                    return self.relu(self.batch_norm(self.fcn_layer(x)))
 
             class Net(nn.Module):
                 def __init__(self, input_shape, layer_dim, n_blocks=1, n_classes=1):
                     super().__init__()
                     self.flatten = nn.Flatten()
                     self.layer1 = nn.Linear(input_shape[0]*input_shape[1], layer_dim)
+                    self.batch_norm1 = nn.BatchNorm1d(layer_dim)
                     self.relu1 = nn.ReLU()
-                    # self.layernorm1 = nn.LayerNorm(layer_dim)
                     self.blocks = nn.ModuleList([FCNBlock(layer_dim) for i in range(n_blocks)])
                     self.last_layer = nn.Linear(layer_dim, n_classes)
                     self.last_act = nn.Sigmoid() if n_classes == 1 else nn.ReLU()
 
                 def forward(self, x):
-                    x = self.relu1(self.layer1(self.flatten(x)))
+                    x = self.relu1(self.batch_norm1(self.layer1(self.flatten(x))))
                     for block in self.blocks:
                         x = block(x)
                     x = self.last_act(self.last_layer(x))
@@ -233,7 +233,10 @@ class Model(nn.Module):
                 averaged_model_dict[key] += value
 
         for key in averaged_model_dict:
-            averaged_model_dict[key] /= len(models)
+            if averaged_model_dict[key].is_floating_point():
+                averaged_model_dict[key] /= len(models)
+            else:
+                averaged_model_dict[key] //= len(models)
 
         # Load the averaged weights into the model
         averaged_model.load_state_dict(averaged_model_dict)
@@ -484,24 +487,25 @@ class Model(nn.Module):
             # Get predictions for batch
             predictions = self.model(x)
 
-            # Construct batch with only samples that have high loss
-            neg_high_loss = predictions[(y == 0) & (predictions.squeeze() >= 0.001)]  # thresholds were chosen arbitrarily but work well
-            pos_high_loss = predictions[(y == 1) & (predictions.squeeze() < 0.999)]
-            y = torch.cat((y[(y == 0) & (predictions.squeeze() >= 0.001)], y[(y == 1) & (predictions.squeeze() < 0.999)]))
+            # Keep all samples (high-loss filtering disabled to prevent degenerate feedback loop
+            # where model collapse causes all negatives to be filtered out)
             y_ = y[..., None].to(torch.float32)
-            predictions = torch.cat((neg_high_loss, pos_high_loss))
 
-            # Set weights for batch
+            # Set weights for batch (positive weight compensates for batch class imbalance)
+            n_pos = (y == 1).sum().item()
+            n_neg = (y == 0).sum().item()
+            pos_weight = max(n_neg / max(n_pos, 1), 1.0)
+
             if len(negative_weight_schedule) == 1:
                 w = torch.ones(y.shape[0])*negative_weight_schedule[0]
                 pos_ndcs = y == 1
-                w[pos_ndcs] = 1
+                w[pos_ndcs] = pos_weight
                 w = w[..., None]
             else:
                 if self.n_classes == 1:
                     w = torch.ones(y.shape[0])*negative_weight_schedule[step_ndx]
                     pos_ndcs = y == 1
-                    w[pos_ndcs] = 1
+                    w[pos_ndcs] = pos_weight
                     w = w[..., None]
 
             if predictions.shape[0] != 0:
@@ -544,6 +548,8 @@ class Model(nn.Module):
                         val_fp += self.fp(val_predictions, y_val[..., None])
                 val_fp_per_hr = (val_fp/val_set_hrs).detach().cpu().numpy()
                 self.history["val_fp_per_hr"].append(val_fp_per_hr)
+                if val_fp_per_hr < self.best_val_fp:
+                    self.best_val_fp = val_fp_per_hr
 
             # Get recall on test clips
             if step_ndx in val_steps and step_ndx > 1 and positive_test_clips is not None:
@@ -669,6 +675,12 @@ if __name__ == '__main__':
     sys.path.insert(0, os.path.abspath(config["piper_sample_generator_path"]))
     from generate_samples import generate_samples
 
+    # Resolve TTS model path (allows config to override the default English model)
+    tts_model_path = config.get("tts_model", None)
+    if tts_model_path:
+        tts_model_path = os.path.abspath(tts_model_path)
+        logging.info(f"Using TTS model: {tts_model_path}")
+
     # Define output locations
     # Note: app.py already sets output_dir to a folder named after the model,
     # so we don't need to create another model_name subfolder here
@@ -698,13 +710,16 @@ if __name__ == '__main__':
             os.mkdir(positive_train_output_dir)
         n_current_samples = len(os.listdir(positive_train_output_dir))
         if n_current_samples <= 0.95*config["n_samples"]:
-            generate_samples(
+            gen_kwargs = dict(
                 text=config["target_phrase"], max_samples=config["n_samples"]-n_current_samples,
                 batch_size=config["tts_batch_size"],
                 noise_scales=[0.98], noise_scale_ws=[0.98], length_scales=[0.75, 1.0, 1.25],
                 output_dir=positive_train_output_dir, auto_reduce_batch_size=True,
                 file_names=[uuid.uuid4().hex + ".wav" for i in range(config["n_samples"])]
             )
+            if tts_model_path:
+                gen_kwargs["model"] = tts_model_path
+            generate_samples(**gen_kwargs)
             torch.cuda.empty_cache()
         else:
             logging.warning(f"Skipping generation of positive clips for training, as ~{config['n_samples']} already exist")
@@ -715,10 +730,13 @@ if __name__ == '__main__':
             os.mkdir(positive_test_output_dir)
         n_current_samples = len(os.listdir(positive_test_output_dir))
         if n_current_samples <= 0.95*config["n_samples_val"]:
-            generate_samples(text=config["target_phrase"], max_samples=config["n_samples_val"]-n_current_samples,
+            gen_kwargs = dict(text=config["target_phrase"], max_samples=config["n_samples_val"]-n_current_samples,
                              batch_size=config["tts_batch_size"],
                              noise_scales=[1.0], noise_scale_ws=[1.0], length_scales=[0.75, 1.0, 1.25],
                              output_dir=positive_test_output_dir, auto_reduce_batch_size=True)
+            if tts_model_path:
+                gen_kwargs["model"] = tts_model_path
+            generate_samples(**gen_kwargs)
             torch.cuda.empty_cache()
         else:
             logging.warning(f"Skipping generation of positive clips testing, as ~{config['n_samples_val']} already exist")
@@ -730,18 +748,22 @@ if __name__ == '__main__':
         n_current_samples = len(os.listdir(negative_train_output_dir))
         if n_current_samples <= 0.95*config["n_samples"]:
             adversarial_texts = config["custom_negative_phrases"]
+            adversarial_fn = generate_adversarial_texts_german if config.get("language", "en") == "de" else generate_adversarial_texts
             for target_phrase in config["target_phrase"]:
-                adversarial_texts.extend(generate_adversarial_texts(
+                adversarial_texts.extend(adversarial_fn(
                     input_text=target_phrase,
                     N=config["n_samples"]//len(config["target_phrase"]),
                     include_partial_phrase=1.0,
                     include_input_words=0.2))
-            generate_samples(text=adversarial_texts, max_samples=config["n_samples"]-n_current_samples,
+            gen_kwargs = dict(text=adversarial_texts, max_samples=config["n_samples"]-n_current_samples,
                              batch_size=config["tts_batch_size"]//7,
                              noise_scales=[0.98], noise_scale_ws=[0.98], length_scales=[0.75, 1.0, 1.25],
                              output_dir=negative_train_output_dir, auto_reduce_batch_size=True,
                              file_names=[uuid.uuid4().hex + ".wav" for i in range(config["n_samples"])]
                              )
+            if tts_model_path:
+                gen_kwargs["model"] = tts_model_path
+            generate_samples(**gen_kwargs)
             torch.cuda.empty_cache()
         else:
             logging.warning(f"Skipping generation of negative clips for training, as ~{config['n_samples']} already exist")
@@ -753,22 +775,28 @@ if __name__ == '__main__':
         n_current_samples = len(os.listdir(negative_test_output_dir))
         if n_current_samples <= 0.95*config["n_samples_val"]:
             adversarial_texts = config["custom_negative_phrases"]
+            adversarial_fn = generate_adversarial_texts_german if config.get("language", "en") == "de" else generate_adversarial_texts
             for target_phrase in config["target_phrase"]:
-                adversarial_texts.extend(generate_adversarial_texts(
+                adversarial_texts.extend(adversarial_fn(
                     input_text=target_phrase,
                     N=config["n_samples_val"]//len(config["target_phrase"]),
                     include_partial_phrase=1.0,
                     include_input_words=0.2))
-            generate_samples(text=adversarial_texts, max_samples=config["n_samples_val"]-n_current_samples,
+            gen_kwargs = dict(text=adversarial_texts, max_samples=config["n_samples_val"]-n_current_samples,
                              batch_size=config["tts_batch_size"]//7,
                              noise_scales=[1.0], noise_scale_ws=[1.0], length_scales=[0.75, 1.0, 1.25],
                              output_dir=negative_test_output_dir, auto_reduce_batch_size=True)
+            if tts_model_path:
+                gen_kwargs["model"] = tts_model_path
+            generate_samples(**gen_kwargs)
             torch.cuda.empty_cache()
         else:
             logging.warning(f"Skipping generation of negative clips for testing, as ~{config['n_samples_val']} already exist")
 
     # Set the total length of the training clips based on the ~median generated clip duration, rounding to the nearest 1000 samples
     # and setting to 32000 when the median + 750 ms is close to that, as it's a good default value
+    # Note: if total_length is explicitly set in the yaml config, it takes precedence over auto-detection
+    _yaml_total_length = config.get("total_length")  # Save yaml value before auto-detection overrides it
     n = 50  # sample size
     positive_clips = [str(i) for i in Path(positive_test_output_dir).glob("*.wav")]
     duration_in_samples = []
@@ -781,6 +809,11 @@ if __name__ == '__main__':
         config["total_length"] = 32000  # set a minimum of 32000 samples (2 seconds)
     elif abs(config["total_length"] - 32000) <= 4000:
         config["total_length"] = 32000
+
+    # Restore yaml-specified total_length if it was explicitly provided
+    if _yaml_total_length is not None:
+        config["total_length"] = _yaml_total_length
+        logging.info(f"Using total_length from config: {config['total_length']} samples ({config['total_length']/16000:.2f}s)")
 
     # Do Data Augmentation
     if args.augment_clips is True:
@@ -830,25 +863,25 @@ if __name__ == '__main__':
             target_device = "gpu" if use_gpu else "cpu"
             ncpu_val = 1 if use_gpu else n_cpus
             
-            compute_features_from_generator(positive_clips_train_generator, n_total=len(os.listdir(positive_train_output_dir)),
+            compute_features_from_generator(positive_clips_train_generator, n_total=len(positive_clips_train),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "positive_features_train.npy"),
                                             device=target_device,
                                             ncpu=ncpu_val)
 
-            compute_features_from_generator(negative_clips_train_generator, n_total=len(os.listdir(negative_train_output_dir)),
+            compute_features_from_generator(negative_clips_train_generator, n_total=len(negative_clips_train),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "negative_features_train.npy"),
                                             device=target_device,
                                             ncpu=ncpu_val)
 
-            compute_features_from_generator(positive_clips_test_generator, n_total=len(os.listdir(positive_test_output_dir)),
+            compute_features_from_generator(positive_clips_test_generator, n_total=len(positive_clips_test),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "positive_features_test.npy"),
                                             device=target_device,
                                             ncpu=ncpu_val)
 
-            compute_features_from_generator(negative_clips_test_generator, n_total=len(os.listdir(negative_test_output_dir)),
+            compute_features_from_generator(negative_clips_test_generator, n_total=len(negative_clips_test),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "negative_features_test.npy"),
                                             device=target_device,

@@ -47,6 +47,62 @@ model_name = _re.sub(r'[\\/:*?"<>|]', '', target_word.replace(" ", "_")) if targ
 # Show warning if no wake word entered
 if not target_word.strip():
     st.sidebar.warning("⚠️ Enter a wake word to begin")
+elif _re.search(r"[^\w\s']", target_word):
+    clean_preview = _re.sub(r"[^\w\s']", "", target_word).strip()
+    st.sidebar.warning(f"⚠️ Punctuation will be stripped for training: **\"{clean_preview}\"**")
+
+# Language selection for TTS model
+LANGUAGE_OPTIONS = {
+    "English": {
+        "code": "en",
+        "model": "en_US-libritts_r-medium.onnx",
+        "label": "English (en_US-libritts_r, 904 speakers)",
+    },
+    "German": {
+        "code": "de",
+        "model": "de_DE-mls-medium.onnx",
+        "label": "German (de_DE-mls, 236 speakers)",
+    },
+}
+selected_language = st.sidebar.selectbox(
+    "Language",
+    options=list(LANGUAGE_OPTIONS.keys()),
+    index=0,
+    help="Language of your wake word. Determines TTS model and adversarial text generation.",
+)
+lang_info = LANGUAGE_OPTIONS[selected_language]
+lang_code = lang_info["code"]
+tts_model_name = lang_info["model"]
+tts_model_path = piper_dir / "models" / tts_model_name
+
+# Check if TTS model is downloaded
+if not tts_model_path.exists():
+    st.sidebar.warning(f"⚠️ TTS model not found: {tts_model_name}")
+    if st.sidebar.button(f"Download {selected_language} TTS Model"):
+        import urllib.request
+        DOWNLOAD_URLS = {
+            "en_US-libritts_r-medium.onnx": (
+                "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx",
+                "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json",
+            ),
+            "de_DE-mls-medium.onnx": (
+                "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/mls/medium/de_DE-mls-medium.onnx",
+                "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/mls/medium/de_DE-mls-medium.onnx.json",
+            ),
+        }
+        model_url, config_url = DOWNLOAD_URLS[tts_model_name]
+        models_dir = piper_dir / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with st.spinner(f"Downloading {tts_model_name} (~75MB)..."):
+                urllib.request.urlretrieve(model_url, str(tts_model_path))
+                urllib.request.urlretrieve(config_url, str(tts_model_path) + ".json")
+            st.sidebar.success(f"✅ {tts_model_name} downloaded!")
+            st.rerun()
+        except Exception as e:
+            st.sidebar.error(f"Download failed: {e}")
+else:
+    st.sidebar.success(f"✅ TTS: {tts_model_name}")
 
 st.sidebar.subheader("Training Parameters")
 number_of_examples = st.sidebar.slider("Number of Examples", min_value=100, max_value=50000, value=5000, step=100, help="How many synthetic examples to generate. More is generally better but takes longer.")
@@ -159,13 +215,13 @@ if st.button("Generate Preview", disabled=not target_word.strip()):
                 f.unlink()
 
             try:
-                # Use Piper ONNX model for TTS
-                piper_model = piper_dir / "models" / "en_US-libritts_r-medium.onnx"
+                # Use Piper ONNX model for TTS (language-aware)
+                piper_model = tts_model_path
                 
                 # Check if model exists
                 if not piper_model.exists():
                     st.error(f"Piper TTS model not found at: {piper_model}")
-                    st.info("Please download the model first by running: python quickstart.py")
+                    st.info(f"Please download the {selected_language} model using the sidebar button or run: python quickstart.py")
                 else:
                     generate_samples(
                         text=target_word,
@@ -314,7 +370,15 @@ preview_feature_files = [
 ]
 
 # Check what already exists
-preview_clips_exist = preview_clips_dir.exists() and any(preview_clips_dir.glob("*.wav"))
+# All 4 clip directories must be non-empty for clips to be considered complete
+# (train.py reads from positive_test/ at line 773 before augment step)
+preview_clip_dirs = [
+    preview_output_dir / "positive_train",
+    preview_output_dir / "positive_test",
+    preview_output_dir / "negative_train",
+    preview_output_dir / "negative_test",
+]
+preview_clips_exist = all(d.exists() and any(d.glob("*.wav")) for d in preview_clip_dirs)
 preview_features_exist = all(f.exists() for f in preview_feature_files)
 preview_model_exists = preview_onnx_path.exists()
 
@@ -349,7 +413,7 @@ if st.session_state.training_error:
     st.error(st.session_state.training_error)
     st.info("💡 **Tip:** Your progress has been saved. Fix the issue and click 'Start Training' again with 'Resume Training' enabled to continue from where you left off.")
     if st.session_state.training_log:
-        with st.expander("Training Log (last run)", expanded=True):
+        with st.expander("❌ Training Failed — Log", expanded=True):
             st.code(st.session_state.training_log[-4000:], language="text")
     if st.button("Clear Error"):
         st.session_state.training_error = None
@@ -384,8 +448,11 @@ if st.session_state.start_training_trigger:
         with open(config_template_path, 'r') as f:
             config = yaml.safe_load(f)
         
-        # Update config
-        config["target_phrase"] = [target_word]
+        # Sanitize target phrase: strip punctuation that breaks the phoneme lookup
+        # (commas, question marks etc. cause words like "hey," to not be found in the
+        # pronunciation dictionary, making generate_adversarial_texts crash)
+        clean_phrase = _re.sub(r"[^\w\s']", "", target_word).strip()
+        config["target_phrase"] = [clean_phrase]
         config["model_name"] = model_name
         config["n_samples"] = number_of_examples
         config["n_samples_val"] = max(500, number_of_examples // 10)
@@ -394,6 +461,8 @@ if st.session_state.start_training_trigger:
         config["target_recall"] = 0.25
         config["output_dir"] = str(current_dir / model_name)
         config["max_negative_weight"] = false_activation_penalty
+        config["language"] = lang_code
+        config["tts_model"] = str(tts_model_path)
         
         # Background audio paths - filter to only existing directories with audio files
         audioset_dir = current_dir / 'audioset_16k'
@@ -465,6 +534,16 @@ if st.session_state.start_training_trigger:
         positive_train_dir = output_dir / "positive_train"
         onnx_model_path = output_dir / f"{model_name}.onnx"
 
+        # All 4 clip directories must be non-empty for generate_clips to be considered complete.
+        # train.py reads from positive_test/ at line 773 before augment step, so missing
+        # any of the 4 dirs causes a crash even if positive_train/ looks fine.
+        clip_dirs = [
+            output_dir / "positive_train",
+            output_dir / "positive_test",
+            output_dir / "negative_train",
+            output_dir / "negative_test",
+        ]
+
         # Feature files that indicate augment_clips is complete
         # train.py saves features directly in output_dir (not a features/ subdir)
         feature_files = [
@@ -473,24 +552,34 @@ if st.session_state.start_training_trigger:
             output_dir / "positive_features_test.npy",
             output_dir / "negative_features_test.npy"
         ]
-        
+
         # Detect existing progress for resume mode
-        clips_exist = positive_train_dir.exists() and any(positive_train_dir.glob("*.wav"))
+        clips_exist = all(d.exists() and any(d.glob("*.wav")) for d in clip_dirs)
+        clips_partial = any(d.exists() and any(d.glob("*.wav")) for d in clip_dirs) and not clips_exist
         features_exist = all(f.exists() for f in feature_files)
+        feature_files_partial = any(f.exists() for f in feature_files) and not features_exist
         model_exists = onnx_model_path.exists()
-        
+
         # Build augment_clips flags
         augment_flags = ["--augment_clips"]
-        if force_recompute or not resume_training:
+        # Force --overwrite if:
+        # - user requested force recompute, or
+        # - resume is disabled, or
+        # - features are partially present (previous run crashed mid-way)
+        #   train.py only checks positive_features_train.npy so it skips all generation
+        #   when that one file exists, even if the other 3 are missing
+        if force_recompute or not resume_training or feature_files_partial:
             augment_flags.append("--overwrite")
-        
+
         # Build step list with skip logic
         steps = []
-        
+
         # Step 1: Generate Clips
         if resume_training and clips_exist:
             st.info(f"⏭️ Skipping 'Generate Clips' - {len(list(positive_train_dir.glob('*.wav')))} clips already exist")
         else:
+            if resume_training and clips_partial:
+                st.warning("⚠️ Clip directories partially complete — regenerating all clips")
             steps.append(("Generate Clips", [python_exe, "-u", train_script] + flags + ["--generate_clips"]))
         
         # Step 2: Augment Clips (compute features)

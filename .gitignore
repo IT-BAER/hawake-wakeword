@@ -72,3 +72,13 @@ uv.lock
 .DS_Store
 Thumbs.db
 .github/copilot-instructions.md
+streamlit.log
+
+# Training logs and artifacts
+training_log*.txt
+augment_log*.txt
+training_log_retrain*.txt
+
+# Piper TTS model files (large binaries, downloaded on setup)
+piper-sample-generator/models/*.onnx
+piper-sample-generator/models/*.onnx.json

@@ -1025,6 +1025,124 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
     return adversarial_texts
 
 
+def generate_adversarial_texts_german(input_text: str, N: int, include_partial_phrase: float = 0, include_input_words: float = 0):
+    """
+    Generate adversarial words and phrases for German texts using character-level
+    phonetic substitution. Since CMUDICT is English-only, this uses German phonetic
+    rules to create similar-sounding but distinct words.
+
+    Args:
+        input_text (str): The target German text for adversarial phrases
+        N (int): The total number of adversarial texts to return
+        include_partial_phrase (float): Probability of returning fewer words than input
+        include_input_words (float): Probability of keeping original words in output
+
+    Returns:
+        list: Phonetically similar German adversarial phrases
+    """
+    # German phonetic substitution rules (common confusions)
+    german_subs = {
+        'sch': ['s', 'ch', 'sh', 'sk'],
+        'ch': ['sch', 'k', 'g', 'tsch'],
+        'ei': ['ai', 'ey', 'ay', 'ie'],
+        'ie': ['ei', 'i', 'ih', 'ee'],
+        'eu': ['oi', 'äu', 'au'],
+        'äu': ['eu', 'oi', 'au'],
+        'au': ['ou', 'ao', 'eu'],
+        'ee': ['eh', 'ie', 'e'],
+        'oo': ['oh', 'o', 'uh'],
+        'ck': ['k', 'g', 'kk'],
+        'pf': ['f', 'p', 'ph'],
+        'sp': ['schp', 'sb', 'sph'],
+        'st': ['scht', 'sd', 'sth'],
+        'tz': ['z', 'ts', 'ss'],
+        'qu': ['kw', 'ku', 'kv'],
+        'ph': ['f', 'pf', 'v'],
+        'th': ['t', 'd', 'tt'],
+        'ü': ['u', 'ue', 'i'],
+        'ö': ['o', 'oe', 'e'],
+        'ä': ['e', 'ae', 'a'],
+        'ß': ['ss', 's', 'sz'],
+        'b': ['p', 'w', 'bb'],
+        'd': ['t', 'th', 'dd'],
+        'g': ['k', 'ch', 'gg'],
+        'h': ['', 'ch'],
+        'j': ['y', 'dsch'],
+        'v': ['f', 'w'],
+        'w': ['v', 'u'],
+        'z': ['ts', 's', 'tz'],
+        'k': ['g', 'ck', 'ch'],
+        't': ['d', 'tt', 'th'],
+        'p': ['b', 'pp', 'pf'],
+        's': ['z', 'ss', 'ß'],
+        'n': ['m', 'nn', 'ng'],
+        'm': ['n', 'mm', 'mb'],
+        'l': ['r', 'll'],
+        'r': ['l', 'rr'],
+        'a': ['e', 'ah', 'aa', 'ä'],
+        'e': ['a', 'eh', 'i', 'ä'],
+        'i': ['e', 'ie', 'ih', 'ü'],
+        'o': ['u', 'oh', 'oo', 'ö'],
+        'u': ['o', 'uh', 'uu', 'ü'],
+    }
+
+    words = input_text.lower().split()
+    adversarial_phrases = []
+
+    for word in words:
+        word_variants = set()
+        # Generate variants by substituting character sequences
+        # Try longer sequences first (sch before s, ch before c)
+        sorted_keys = sorted(german_subs.keys(), key=len, reverse=True)
+
+        for _ in range(N * 3):  # Generate more than needed, deduplicate later
+            variant = word
+            # Apply 1-3 random substitutions
+            n_subs = np.random.randint(1, min(4, len(word) // 2 + 1))
+            for _ in range(n_subs):
+                key = np.random.choice(sorted_keys)
+                if key in variant:
+                    replacement = np.random.choice(german_subs[key])
+                    # Replace only one occurrence randomly
+                    idx = variant.find(key)
+                    if idx >= 0:
+                        variant = variant[:idx] + replacement + variant[idx + len(key):]
+            if variant != word and len(variant) > 0:
+                word_variants.add(variant)
+
+        if word_variants:
+            adversarial_phrases.append(list(word_variants))
+        else:
+            # Fallback: simple character swaps
+            fallback = []
+            for i in range(len(word)):
+                for c in 'abcdefghijklmnoprstuvwz':
+                    if c != word[i]:
+                        fallback.append(word[:i] + c + word[i+1:])
+            adversarial_phrases.append(fallback if fallback else [word])
+
+    # Build output combinations
+    adversarial_texts = []
+    for i in range(N):
+        txts = []
+        for j, k in zip(adversarial_phrases, words):
+            if np.random.random() > (1 - include_input_words):
+                txts.append(k)
+            else:
+                txts.append(np.random.choice(j))
+
+        if include_partial_phrase is not None and len(words) > 1 and np.random.random() <= include_partial_phrase:
+            n_words = np.random.randint(1, len(words) + 1)
+            adversarial_texts.append(" ".join(np.random.choice(txts, size=n_words, replace=False)))
+        else:
+            adversarial_texts.append(" ".join(txts))
+
+    # Remove exact matches
+    adversarial_texts = [i for i in adversarial_texts if i != input_text.lower()]
+
+    return adversarial_texts
+
+
 def phoneme_replacement(input_chars, max_replace, replace_char='"(.){1,3}"'):
     results = []
     chars = list(input_chars)

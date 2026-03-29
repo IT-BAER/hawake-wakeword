@@ -182,42 +182,51 @@ except Exception as e:
     else:
         print_success("Using CPU mode (no NVIDIA GPU)")
     
-    # Step 5: Download Piper TTS model if needed
+    # Step 5: Download Piper TTS models if needed
     piper_models_dir = script_dir / "piper-sample-generator" / "models"
-    piper_model = piper_models_dir / "en_US-libritts_r-medium.onnx"
-    piper_config = piper_models_dir / "en_US-libritts_r-medium.onnx.json"
-    
-    # ONNX model URLs from official Piper voices repository
-    model_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx"
-    config_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json"
-    
     piper_models_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Download ONNX model if not present
-    if not piper_model.exists():
-        print_step("Downloading Piper TTS model (~75MB)...")
-        try:
-            import urllib.request
-            urllib.request.urlretrieve(model_url, piper_model)
-            print_success("Piper TTS model downloaded")
-        except Exception as e:
-            print_error(f"Could not download model: {e}")
-            print_warning("Please download it manually from:")
-            print_warning(f"  {model_url}")
-    else:
-        print_success("Piper TTS model exists")
-    
-    # Download config file if not present
-    if not piper_config.exists():
-        print_step("Downloading Piper TTS config...")
-        try:
-            import urllib.request
-            urllib.request.urlretrieve(config_url, piper_config)
-            print_success("Piper TTS config downloaded")
-        except Exception as e:
-            print_warning(f"Could not download config: {e}")
-            print_warning("Please download it manually from:")
-            print_warning(f"  {config_url}")
+
+    # TTS models to download: (filename, model_url, config_url)
+    tts_downloads = [
+        (
+            "en_US-libritts_r-medium.onnx",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx.json",
+        ),
+        (
+            "de_DE-mls-medium.onnx",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/mls/medium/de_DE-mls-medium.onnx",
+            "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/mls/medium/de_DE-mls-medium.onnx.json",
+        ),
+    ]
+
+    for model_filename, model_url, config_url in tts_downloads:
+        piper_model = piper_models_dir / model_filename
+        piper_config = piper_models_dir / f"{model_filename}.json"
+
+        # Download ONNX model if not present
+        if not piper_model.exists():
+            print_step(f"Downloading Piper TTS model: {model_filename} (~75MB)...")
+            try:
+                import urllib.request
+                urllib.request.urlretrieve(model_url, piper_model)
+                print_success(f"Downloaded {model_filename}")
+            except Exception as e:
+                print_error(f"Could not download {model_filename}: {e}")
+                print_warning(f"  Download manually from: {model_url}")
+        else:
+            print_success(f"Piper TTS model exists: {model_filename}")
+
+        # Download config file if not present
+        if not piper_config.exists():
+            print_step(f"Downloading config for {model_filename}...")
+            try:
+                import urllib.request
+                urllib.request.urlretrieve(config_url, piper_config)
+                print_success(f"Config downloaded for {model_filename}")
+            except Exception as e:
+                print_warning(f"Could not download config for {model_filename}: {e}")
+                print_warning(f"  Download manually from: {config_url}")
     
     # Step 6: Verify opset versions
     print_step("Verifying ONNX model compatibility...")

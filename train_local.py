@@ -12,6 +12,13 @@ target_word = 'hey mycroft'
 number_of_examples = 1000 
 number_of_training_steps = 1000
 false_activation_penalty = 1500
+language = 'en'  # 'en' for English, 'de' for German
+
+# TTS model mapping
+TTS_MODELS = {
+    'en': 'en_US-libritts_r-medium.onnx',
+    'de': 'de_DE-mls-medium.onnx',
+}
 
 python_exe = sys.executable
 
@@ -42,6 +49,14 @@ def main():
     config["target_recall"] = 0.25
     config["output_dir"] = str(project_root / "my_custom_model")
     config["max_negative_weight"] = false_activation_penalty
+    config["language"] = language
+    tts_model_path = project_root / "piper-sample-generator" / "models" / TTS_MODELS.get(language, TTS_MODELS['en'])
+    if tts_model_path.exists():
+        config["tts_model"] = str(tts_model_path)
+        print(f"✅ Using TTS model: {tts_model_path.name}")
+    else:
+        print(f"⚠️ TTS model not found: {tts_model_path}")
+        print(f"   Run 'python quickstart.py' to download or set language to a supported value.")
 
     # Set data paths relative to project root
     config["background_paths"] = [str(project_root / 'audioset_16k'), str(project_root / 'fma')]

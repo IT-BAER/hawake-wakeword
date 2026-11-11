@@ -373,7 +373,7 @@ def patch_torch_audiomentations():
     # Check if already patched
     content = io_path.read_text(encoding='utf-8')
     if "Patched for torchaudio 2.1+" in content:
-        print(f"[✓] torch_audiomentations already patched: {io_path}")
+        print(f"[OK] torch_audiomentations already patched: {io_path}")
         return True
     
     # Check if patch is needed - any of these indicate incompatibility with torchaudio 2.1+
@@ -384,7 +384,7 @@ def patch_torch_audiomentations():
     )
     
     if not needs_patch:
-        print(f"[✓] torch_audiomentations doesn't need patching: {io_path}")
+        print(f"[OK] torch_audiomentations doesn't need patching: {io_path}")
         return True
     
     # Apply patch
@@ -398,7 +398,7 @@ def patch_torch_audiomentations():
     
     # Write patched content
     io_path.write_text(get_patched_io_content(), encoding='utf-8')
-    print(f"[✓] Patched torch_audiomentations for torchaudio 2.1+ compatibility")
+    print(f"[OK] Patched torch_audiomentations for torchaudio 2.1+ compatibility")
     
     return True
 

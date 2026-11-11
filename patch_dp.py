@@ -45,7 +45,7 @@ def patch_dp():
     
     # Check if already patched
     if "weights_only=False" in content:
-        print("[✓] dp/model/model.py already patched")
+        print("[OK] dp/model/model.py already patched")
         return True
     
     # Pattern 1: Simple replacement
@@ -56,7 +56,7 @@ def patch_dp():
         content = content.replace(old_code, new_code)
         with open(target_file, "w", encoding="utf-8") as f:
             f.write(content)
-        print("[✓] Patched dp/model/model.py for PyTorch 2.6+ compatibility")
+        print("[OK] Patched dp/model/model.py for PyTorch 2.6+ compatibility")
         return True
     
     # Pattern 2: Regex fallback for different formatting
@@ -67,7 +67,7 @@ def patch_dp():
     if count > 0:
         with open(target_file, "w", encoding="utf-8") as f:
             f.write(new_content)
-        print(f"[✓] Patched {count} occurrence(s) in dp/model/model.py (regex)")
+        print(f"[OK] Patched {count} occurrence(s) in dp/model/model.py (regex)")
         return True
     
     print("[!] Could not find expected torch.load pattern in dp/model/model.py")

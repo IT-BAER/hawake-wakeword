@@ -84,6 +84,14 @@ if errorlevel 1 (set "STEP=PyTorch install" & goto :fail)
 pip install -r requirements.txt -q || (set "STEP=pip install -r requirements.txt" & goto :fail)
 pip install streamlit -q || (set "STEP=pip install streamlit" & goto :fail)
 
+REM Compatibility patches, same as install.ps1 (torchaudio 2.1+, PyTorch 2.6+)
+echo [*] Checking torch_audiomentations compatibility...
+python patch_torch_audiomentations.py || (set "STEP=patch_torch_audiomentations.py" & goto :fail)
+echo [*] Checking DeepPhonemizer compatibility...
+python patch_dp.py || (set "STEP=patch_dp.py" & goto :fail)
+echo [*] Checking speechbrain compatibility...
+python -c "import pathlib,re; p=pathlib.Path(r'.venv\Lib\site-packages\speechbrain\utils\torch_audio_backend.py'); s=p.read_bytes() if p.exists() else b''; n=re.sub(rb'torchaudio\.set_audio_backend\([^)]+\)', b'pass  # Removed: torchaudio.set_audio_backend (deprecated in 2.1+)', s); s == n or p.write_bytes(n)" || (set "STEP=speechbrain patch" & goto :fail)
+
 if exist "piper-sample-generator\requirements.txt" (
     pip install -r piper-sample-generator\requirements.txt -q || (set "STEP=pip install -r piper-sample-generator\requirements.txt" & goto :fail)
 )

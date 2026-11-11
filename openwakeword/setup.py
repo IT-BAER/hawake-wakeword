@@ -68,6 +68,7 @@ setuptools.setup(
                     'acoustics>=0.2.6,<1',
                     'pyyaml>=6.0,<7',
                     'tensorflow==2.19.0',
+                    'numpy>=1.26,<2',
                     'tensorflow_probability==0.25.0',
                     'protobuf>=4.25.1,<6',
                     'onnx2tf==1.28.8',

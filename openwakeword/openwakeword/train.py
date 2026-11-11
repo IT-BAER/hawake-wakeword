@@ -3,6 +3,7 @@ from torch import optim, nn
 import torchinfo
 import torchmetrics
 import copy
+import inspect
 import os
 import sys
 import tempfile
@@ -19,6 +20,9 @@ import openwakeword
 from openwakeword.data import generate_adversarial_texts, generate_adversarial_texts_german, augment_clips, mmap_batch_generator
 from openwakeword.utils import compute_features_from_generator
 from openwakeword.utils import AudioFeatures
+
+# torch < 2.4 has no `dynamo` argument; its only exporter is the legacy TorchScript one
+_ONNX_EXPORT_KW = {"dynamo": False} if "dynamo" in inspect.signature(torch.onnx.export).parameters else {}
 
 
 # Base model class for an openwakeword model
@@ -165,7 +169,7 @@ class Model(nn.Module):
             # Save ONNX model - use dynamo=False for legacy TorchScript export
             # which properly respects opset_version for Android compatibility
             torch.onnx.export(self.model.to("cpu"), torch.rand(self.input_shape)[None, ], output_path,
-                              output_names=[class_mapping], opset_version=opset_version, dynamo=False)
+                              output_names=[class_mapping], opset_version=opset_version, **_ONNX_EXPORT_KW)
 
         elif self.n_classes >= 1:
             class M(nn.Module):
@@ -180,7 +184,7 @@ class Model(nn.Module):
 
             # Save ONNX model - use dynamo=False for legacy TorchScript export
             torch.onnx.export(M(), torch.rand(self.input_shape)[None, ], output_path,
-                              output_names=[class_mapping], opset_version=opset_version, dynamo=False)
+                              output_names=[class_mapping], opset_version=opset_version, **_ONNX_EXPORT_KW)
 
     def lr_warmup_cosine_decay(self,
                                global_step,
@@ -449,7 +453,7 @@ class Model(nn.Module):
         logging.info(f"####\nSaving ONNX mode as '{os.path.join(output_dir, model_name + '.onnx')}'")
         model_to_save = copy.deepcopy(model)
         torch.onnx.export(model_to_save.to("cpu"), torch.rand(self.input_shape)[None, ],
-                          os.path.join(output_dir, model_name + ".onnx"), opset_version=11, dynamo=False)
+                          os.path.join(output_dir, model_name + ".onnx"), opset_version=11, **_ONNX_EXPORT_KW)
         
         # Save PTH model
         pth_path = os.path.join(output_dir, model_name + ".pth")

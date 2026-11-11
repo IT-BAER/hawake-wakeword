@@ -103,7 +103,7 @@ if [ "$FORCE_CPU" = "1" ]; then
     pip_install torch torchvision torchaudio
 elif command -v nvidia-smi &> /dev/null; then
     echo -e "${GREEN}[✓] GPU detected - installing CUDA-enabled PyTorch...${NC}"
-    pip_install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+    pip_install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 else
     echo -e "${YELLOW}[!] No GPU detected - using CPU version (training will be slower)${NC}"
     pip_install torch torchvision torchaudio

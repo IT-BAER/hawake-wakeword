@@ -97,6 +97,11 @@ if (-not (Test-Path ".venv")) {
     Assert-Success "Creating the virtual environment"
     Write-Host "[✓] Virtual environment created" -ForegroundColor Green
 } else {
+    # A .venv from another Python brings back the wheel failures above
+    if (-not (Select-String -Path ".venv\pyvenv.cfg" -Pattern '^version(_info)?\s*=\s*3\.11\.' -Quiet -ErrorAction SilentlyContinue)) {
+        Write-Host "[✗] .venv was not created with Python 3.11. Delete the .venv folder and re-run." -ForegroundColor Red
+        exit 1
+    }
     Write-Host "[✓] Virtual environment exists" -ForegroundColor Green
 }
 
@@ -140,7 +145,7 @@ if ($hasGpu) {
     } else {
         Write-Host "[✓] GPU detected - installing CUDA-enabled PyTorch..." -ForegroundColor Green
         Write-Host "    Note: PyTorch is ~2.5GB - this may take a few minutes" -ForegroundColor Gray
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
     }
 } else {
     Write-Host "[!] No GPU detected - using CPU version (training will be slower)" -ForegroundColor Yellow

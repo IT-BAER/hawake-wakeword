@@ -1,4 +1,4 @@
-# HAwake WakeWord Training - One-liner PowerShell Setup
+﻿# HAwake WakeWord Training - One-liner PowerShell Setup
 # Usage: git clone https://github.com/IT-BAER/hawake-wakeword.git; cd hawake-wakeword; .\install.ps1
 # Options:
 #   -Fast    Skip data downloads (use existing data or download later)

@@ -604,21 +604,23 @@ class Model(nn.Module):
 def convert_onnx_to_tflite(onnx_model_path, output_path):
     """Converts an ONNX version of an openwakeword model to the Tensorflow tflite format."""
     # imports
+    import shutil
     import onnx
-    from onnx_tf.backend import prepare
-    import tensorflow as tf
+    import onnx2tf
 
-    # Convert to tflite from onnx model
-    onnx_model = onnx.load(onnx_model_path)
-    tf_rep = prepare(onnx_model, device="CPU")
+    # onnx2tf transposes 3D inputs to NWC unless told to keep the shape; it renames ':' to '__' in input names
+    input_name = onnx.load(onnx_model_path).graph.input[0].name.replace(':', '__')
     with tempfile.TemporaryDirectory() as tmp_dir:
-        tf_rep.export_graph(os.path.join(tmp_dir, "tf_model"))
-        converter = tf.lite.TFLiteConverter.from_saved_model(os.path.join(tmp_dir, "tf_model"))
-        tflite_model = converter.convert()
+        onnx2tf.convert(
+            input_onnx_file_path=onnx_model_path,
+            output_folder_path=tmp_dir,
+            keep_shape_absolutely_input_names=[input_name],
+            non_verbose=True,
+        )
+        stem = os.path.splitext(os.path.basename(onnx_model_path))[0]
 
         logging.info(f"####\nSaving tflite mode to '{output_path}'")
-        with open(output_path, 'wb') as f:
-            f.write(tflite_model)
+        shutil.copyfile(os.path.join(tmp_dir, f"{stem}_float32.tflite"), output_path)
 
     return None
 

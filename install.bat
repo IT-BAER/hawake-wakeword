@@ -8,14 +8,18 @@ echo   HAwake WakeWord Training Setup
 echo ========================================
 echo.
 
-REM Check Python
-where python >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Python not found! Please install Python 3.10+ first.
+REM Python 3.11, like install.sh: py -3.11 first, else python on PATH if it is 3.11
+set "PYTHON="
+REM call: a py/python batch shim (pyenv-win) would otherwise end this script
+call py -3.11 -c "import sys" >nul 2>&1 && set "PYTHON=py -3.11"
+if not defined PYTHON call python -c "import sys; sys.exit(sys.version_info[:2] != (3, 11))" >nul 2>&1 && set "PYTHON=python"
+if not defined PYTHON (
+    echo [ERROR] Python 3.11 not found ^(py -3.11 or python on PATH^)! Please install Python 3.11 first.
     echo Download from: https://www.python.org/downloads/
     pause
     exit /b 1
 )
+echo [OK] Using Python 3.11: %PYTHON%
 
 REM Clone required repositories if not present
 echo.
@@ -25,7 +29,7 @@ REM Clone OpenWakeWord if needed
 if not exist "openwakeword" (
     echo [*] Cloning openwakeword repository...
     git clone https://github.com/dscripka/openwakeword.git openwakeword
-    if %errorlevel% neq 0 (
+    if errorlevel 1 (
         echo [ERROR] Failed to clone openwakeword!
         pause
         exit /b 1
@@ -39,7 +43,7 @@ REM Clone piper-sample-generator if needed
 if not exist "piper-sample-generator" (
     echo [*] Cloning piper-sample-generator repository...
     git clone https://github.com/rhasspy/piper-sample-generator.git piper-sample-generator
-    if %errorlevel% neq 0 (
+    if errorlevel 1 (
         echo [ERROR] Failed to clone piper-sample-generator!
         pause
         exit /b 1
@@ -52,7 +56,14 @@ if not exist "piper-sample-generator" (
 REM Create venv if not exists
 if not exist ".venv" (
     echo [*] Creating virtual environment...
-    python -m venv .venv
+    call %PYTHON% -m venv .venv || (set "STEP=Creating the virtual environment" & goto :fail)
+) else (
+    REM A .venv from another Python brings back the wheel failures
+    findstr /r /b /c:"version *= *3\.11\." /c:"version_info *= *3\.11\." .venv\pyvenv.cfg >nul 2>&1 || (
+        echo [ERROR] .venv was not created with Python 3.11. Delete the .venv folder and re-run.
+        pause
+        exit /b 1
+    )
 )
 
 REM Activate and install
@@ -63,17 +74,26 @@ REM Check for GPU
 nvidia-smi >nul 2>&1
 if %errorlevel% equ 0 (
     echo [*] GPU detected - installing CUDA-enabled PyTorch...
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 -q
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126 -q
 ) else (
     echo [*] No GPU detected - using CPU version...
     pip install torch torchvision torchaudio -q
 )
+if errorlevel 1 (set "STEP=PyTorch install" & goto :fail)
 
-pip install -r requirements.txt -q
-pip install streamlit -q
+pip install -r requirements.txt -q || (set "STEP=pip install -r requirements.txt" & goto :fail)
+pip install streamlit -q || (set "STEP=pip install streamlit" & goto :fail)
+
+REM Compatibility patches, same as install.ps1 (torchaudio 2.1+, PyTorch 2.6+)
+echo [*] Checking torch_audiomentations compatibility...
+python patch_torch_audiomentations.py || (set "STEP=patch_torch_audiomentations.py" & goto :fail)
+echo [*] Checking DeepPhonemizer compatibility...
+python patch_dp.py || (set "STEP=patch_dp.py" & goto :fail)
+echo [*] Checking speechbrain compatibility...
+python -c "import pathlib,re; p=pathlib.Path(r'.venv\Lib\site-packages\speechbrain\utils\torch_audio_backend.py'); s=p.read_bytes() if p.exists() else b''; n=re.sub(rb'torchaudio\.set_audio_backend\([^)]+\)', b'pass  # Removed: torchaudio.set_audio_backend (deprecated in 2.1+)', s); s == n or p.write_bytes(n)" || (set "STEP=speechbrain patch" & goto :fail)
 
 if exist "piper-sample-generator\requirements.txt" (
-    pip install -r piper-sample-generator\requirements.txt -q
+    pip install -r piper-sample-generator\requirements.txt -q || (set "STEP=pip install -r piper-sample-generator\requirements.txt" & goto :fail)
 )
 
 REM Download Piper TTS model if not present
@@ -85,7 +105,7 @@ if not exist "piper-sample-generator\models" mkdir piper-sample-generator\models
 
 REM Download ONNX model
 if not exist "%PIPER_MODEL%" (
-    echo [*] Downloading Piper TTS model (~75MB)...
+    echo [*] Downloading Piper TTS model ^(~75MB^)...
     curl -sL "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/libritts_r/medium/en_US-libritts_r-medium.onnx" -o "%PIPER_MODEL%"
     if exist "%PIPER_MODEL%" (
         echo [OK] Piper TTS model downloaded
@@ -108,7 +128,7 @@ if not exist "%PIPER_CONFIG%" (
 
 REM Download Room Impulse Responses for audio augmentation
 if not exist "mit_rirs" (
-    echo [*] Downloading Room Impulse Responses (~10MB)...
+    echo [*] Downloading Room Impulse Responses ^(~10MB^)...
     echo     This improves training quality with realistic audio augmentation
     python download_rirs.py
     if exist "mit_rirs" (
@@ -124,7 +144,7 @@ if not exist "mit_rirs" (
 REM Download background audio data (required for training)
 if not exist "audioset_16k\*.wav" (
     echo.
-    echo [*] Downloading background audio data (~3-5 GB)...
+    echo [*] Downloading background audio data ^(~3-5 GB^)...
     echo     This is required for training and may take 10-30 minutes
     echo.
     python download_data.py
@@ -148,3 +168,9 @@ echo (Press Ctrl+C to stop)
 echo.
 
 streamlit run app.py
+exit /b
+
+:fail
+echo [ERROR] %STEP% failed. Setup stopped.
+pause
+exit /b 1

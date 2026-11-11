@@ -1,4 +1,4 @@
-# HAwake WakeWord Training - One-liner PowerShell Setup
+﻿# HAwake WakeWord Training - One-liner PowerShell Setup
 # Usage: git clone https://github.com/IT-BAER/hawake-wakeword.git; cd hawake-wakeword; .\install.ps1
 # Options:
 #   -Fast    Skip data downloads (use existing data or download later)
@@ -10,6 +10,33 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# A failed native step (pip, python) stops the setup instead of ending in "Setup Complete!"
+function Assert-Success([string]$Step) {
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[✗] $Step failed (exit code $LASTEXITCODE). Setup stopped." -ForegroundColor Red
+        exit 1
+    }
+}
+
+# Python 3.11, like install.sh: the py launcher's 3.11 first, else python on PATH if it is 3.11
+function Find-Python311 {
+    # Windows PowerShell 5.1 turns native stderr into terminating errors under "Stop"
+    $ErrorActionPreference = "Continue"
+    $probe = "import sys; print(sys.executable if sys.version_info[:2] == (3, 11) else '')"
+    $exe = $null
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        # Without a 3.11, py prints its error and runtime list to stdout and exits non-zero
+        $exe = py -3.11 -c $probe 2>$null
+        if ($LASTEXITCODE -ne 0) { $exe = $null }
+    }
+    if (-not $exe -and (Get-Command python -ErrorAction SilentlyContinue)) {
+        $exe = python -c $probe 2>$null
+        if ($LASTEXITCODE -ne 0) { $exe = $null }
+    }
+    if ($exe) { return "$exe".Trim() }
+    return $null
+}
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -24,14 +51,14 @@ if ($Minimal) {
 Write-Host ""
 
 # Check Python
-try {
-    $pythonVersion = python --version 2>&1
-    Write-Host "[✓] Found $pythonVersion" -ForegroundColor Green
-} catch {
-    Write-Host "[✗] Python not found! Please install Python 3.10+ first." -ForegroundColor Red
+$python = Find-Python311
+if (-not $python) {
+    Write-Host "[✗] Python 3.11 not found (py -3.11 or python on PATH)! Please install Python 3.11 first." -ForegroundColor Red
     Write-Host "Download from: https://www.python.org/downloads/" -ForegroundColor Yellow
     exit 1
 }
+$pythonVersion = & $python --version 2>&1
+Write-Host "[✓] Found $pythonVersion ($python)" -ForegroundColor Green
 
 # Clone required repositories if not present
 Write-Host ""
@@ -66,9 +93,15 @@ if (-not (Test-Path "piper-sample-generator")) {
 # Create venv if not exists
 if (-not (Test-Path ".venv")) {
     Write-Host "[*] Creating virtual environment..." -ForegroundColor Cyan
-    python -m venv .venv
+    & $python -m venv .venv
+    Assert-Success "Creating the virtual environment"
     Write-Host "[✓] Virtual environment created" -ForegroundColor Green
 } else {
+    # A .venv from another Python brings back the wheel failures above
+    if (-not (Select-String -Path ".venv\pyvenv.cfg" -Pattern '^version(_info)?\s*=\s*3\.11\.' -Quiet -ErrorAction SilentlyContinue)) {
+        Write-Host "[✗] .venv was not created with Python 3.11. Delete the .venv folder and re-run." -ForegroundColor Red
+        exit 1
+    }
     Write-Host "[✓] Virtual environment exists" -ForegroundColor Green
 }
 
@@ -112,15 +145,18 @@ if ($hasGpu) {
     } else {
         Write-Host "[✓] GPU detected - installing CUDA-enabled PyTorch..." -ForegroundColor Green
         Write-Host "    Note: PyTorch is ~2.5GB - this may take a few minutes" -ForegroundColor Gray
-        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
     }
 } else {
     Write-Host "[!] No GPU detected - using CPU version (training will be slower)" -ForegroundColor Yellow
     pip install torch torchvision torchaudio
 }
+Assert-Success "PyTorch install"
 
 pip install -r requirements.txt -q
+Assert-Success "pip install -r requirements.txt"
 pip install streamlit -q
+Assert-Success "pip install streamlit"
 
 # Patch torch_audiomentations for torchaudio 2.1+ compatibility
 # In newer torchaudio versions, these functions were removed:
@@ -129,11 +165,13 @@ pip install streamlit -q
 # - torchaudio.info()
 Write-Host "[*] Checking torch_audiomentations compatibility..." -ForegroundColor Cyan
 python patch_torch_audiomentations.py
+Assert-Success "patch_torch_audiomentations.py"
 
 # Patch DeepPhonemizer (dp) for PyTorch 2.6+ compatibility
 # PyTorch 2.6 changed weights_only default to True, breaking checkpoint loading
 Write-Host "[*] Checking DeepPhonemizer compatibility..." -ForegroundColor Cyan
 python patch_dp.py
+Assert-Success "patch_dp.py"
 
 # Patch speechbrain for torchaudio 2.1+ compatibility
 $sbFile = ".venv\Lib\site-packages\speechbrain\utils\torch_audio_backend.py"
@@ -149,6 +187,7 @@ if (Test-Path $sbFile) {
 
 if (Test-Path "piper-sample-generator\requirements.txt") {
     pip install -r piper-sample-generator\requirements.txt -q
+    Assert-Success "pip install -r piper-sample-generator\requirements.txt"
 }
 
 # Download Piper TTS ONNX model if not present

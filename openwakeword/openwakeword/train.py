@@ -3,6 +3,7 @@ from torch import optim, nn
 import torchinfo
 import torchmetrics
 import copy
+import inspect
 import os
 import sys
 import tempfile
@@ -19,6 +20,9 @@ import openwakeword
 from openwakeword.data import generate_adversarial_texts, generate_adversarial_texts_german, augment_clips, mmap_batch_generator
 from openwakeword.utils import compute_features_from_generator
 from openwakeword.utils import AudioFeatures
+
+# torch < 2.4 has no `dynamo` argument; its only exporter is the legacy TorchScript one
+_ONNX_EXPORT_KW = {"dynamo": False} if "dynamo" in inspect.signature(torch.onnx.export).parameters else {}
 
 
 # Base model class for an openwakeword model
@@ -165,7 +169,7 @@ class Model(nn.Module):
             # Save ONNX model - use dynamo=False for legacy TorchScript export
             # which properly respects opset_version for Android compatibility
             torch.onnx.export(self.model.to("cpu"), torch.rand(self.input_shape)[None, ], output_path,
-                              output_names=[class_mapping], opset_version=opset_version, dynamo=False)
+                              output_names=[class_mapping], opset_version=opset_version, **_ONNX_EXPORT_KW)
 
         elif self.n_classes >= 1:
             class M(nn.Module):
@@ -180,7 +184,7 @@ class Model(nn.Module):
 
             # Save ONNX model - use dynamo=False for legacy TorchScript export
             torch.onnx.export(M(), torch.rand(self.input_shape)[None, ], output_path,
-                              output_names=[class_mapping], opset_version=opset_version, dynamo=False)
+                              output_names=[class_mapping], opset_version=opset_version, **_ONNX_EXPORT_KW)
 
     def lr_warmup_cosine_decay(self,
                                global_step,
@@ -449,7 +453,7 @@ class Model(nn.Module):
         logging.info(f"####\nSaving ONNX mode as '{os.path.join(output_dir, model_name + '.onnx')}'")
         model_to_save = copy.deepcopy(model)
         torch.onnx.export(model_to_save.to("cpu"), torch.rand(self.input_shape)[None, ],
-                          os.path.join(output_dir, model_name + ".onnx"), opset_version=11, dynamo=False)
+                          os.path.join(output_dir, model_name + ".onnx"), opset_version=11, **_ONNX_EXPORT_KW)
         
         # Save PTH model
         pth_path = os.path.join(output_dir, model_name + ".pth")
@@ -604,21 +608,23 @@ class Model(nn.Module):
 def convert_onnx_to_tflite(onnx_model_path, output_path):
     """Converts an ONNX version of an openwakeword model to the Tensorflow tflite format."""
     # imports
+    import shutil
     import onnx
-    from onnx_tf.backend import prepare
-    import tensorflow as tf
+    import onnx2tf
 
-    # Convert to tflite from onnx model
-    onnx_model = onnx.load(onnx_model_path)
-    tf_rep = prepare(onnx_model, device="CPU")
+    # onnx2tf transposes 3D inputs to NWC unless told to keep the shape; it renames ':' to '__' in input names
+    input_name = onnx.load(onnx_model_path).graph.input[0].name.replace(':', '__')
     with tempfile.TemporaryDirectory() as tmp_dir:
-        tf_rep.export_graph(os.path.join(tmp_dir, "tf_model"))
-        converter = tf.lite.TFLiteConverter.from_saved_model(os.path.join(tmp_dir, "tf_model"))
-        tflite_model = converter.convert()
+        onnx2tf.convert(
+            input_onnx_file_path=onnx_model_path,
+            output_folder_path=tmp_dir,
+            keep_shape_absolutely_input_names=[input_name],
+            non_verbose=True,
+        )
+        stem = os.path.splitext(os.path.basename(onnx_model_path))[0]
 
         logging.info(f"####\nSaving tflite mode to '{output_path}'")
-        with open(output_path, 'wb') as f:
-            f.write(tflite_model)
+        shutil.copyfile(os.path.join(tmp_dir, f"{stem}_float32.tflite"), output_path)
 
     return None
 

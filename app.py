@@ -43,10 +43,14 @@ target_word = st.sidebar.text_input("Target Wakeword", value="", placeholder="e.
 # Model name goes into paths and shell=True commands: keep only word characters and '-'
 import re as _re
 model_name = _re.sub(r'[^\w-]', '', target_word.replace(" ", "_")) if target_word else ""
+# Without a letter or digit the training phrase is empty and the output folder would be the app folder
+word_ok = bool(_re.search(r"[^\W_]", target_word))
 
 # Show warning if no wake word entered
 if not target_word.strip():
     st.sidebar.warning("⚠️ Enter a wake word to begin")
+elif not word_ok:
+    st.sidebar.error("⚠️ The wake word needs at least one letter or digit")
 elif _re.search(r"[^\w\s']", target_word):
     clean_preview = _re.sub(r"[^\w\s']", "", target_word).strip()
     st.sidebar.warning(f"⚠️ Punctuation will be stripped for training: **\"{clean_preview}\"**")
@@ -117,6 +121,15 @@ onnx_opset = st.sidebar.selectbox(
     help="Opset 11 recommended for Android 8+ compatibility with best operator support."
 )
 st.sidebar.caption("ℹ️ Opset 11 is recommended for Android 8+ devices")
+
+import importlib.util
+TFLITE_AVAILABLE = importlib.util.find_spec("onnx2tf") is not None
+export_tflite = st.sidebar.checkbox(
+    "Also export TFLite",
+    value=False,
+    disabled=not TFLITE_AVAILABLE,
+    help="HAwake Android uses only the ONNX model. TFLite needs: pip install -r requirements-tflite.txt"
+)
 
 def check_gpu_compatibility():
     """Checks if the GPU is actually usable for PyTorch operations."""
@@ -200,10 +213,10 @@ else:
 st.header("1. Wake Word Preview")
 st.markdown("Listen to how the synthetic voice pronounces your wake word. Adjust the spelling (e.g., phonetic spelling) until it sounds right.")
 
-if st.button("Generate Preview", disabled=not target_word.strip()):
+if st.button("Generate Preview", disabled=not word_ok):
     if not PIPER_AVAILABLE:
         st.error("Piper generator is not available. Please check dependencies.")
-    elif not target_word.strip():
+    elif not word_ok:
         st.error("Please enter a wake word first!")
     else:
         with st.spinner("Generating preview..."):
@@ -421,9 +434,9 @@ if st.session_state.training_error:
         st.rerun()
 
 # Disable Start button if already training or no wake word entered
-start_disabled = st.session_state.training_running or not target_word.strip()
+start_disabled = st.session_state.training_running or not word_ok
 if st.button("Start Training", disabled=start_disabled):
-    if not target_word.strip():
+    if not word_ok:
         st.error("Please enter a wake word first!")
     else:
         # Mark training as running and trigger rerun to disable button immediately
@@ -590,7 +603,8 @@ if st.session_state.start_training_trigger:
         
         # Step 3: Train Model (always run if not skipping all)
         # Even if model exists, user probably wants to retrain
-        steps.append(("Train Model", [python_exe, "-u", train_script] + flags + ["--train_model"]))
+        train_flags = ["--train_model"] + (["--convert_to_tflite"] if export_tflite else [])
+        steps.append(("Train Model", [python_exe, "-u", train_script] + flags + train_flags))
         
         if not steps:
             st.warning("⚠️ All steps already completed! Disable 'Resume Training' to start fresh.")
@@ -604,12 +618,11 @@ if st.session_state.start_training_trigger:
                 cmd_str = " ".join(cmd_list)
                 ret_code = run_command(cmd_str, log_placeholder)
                 
-                # Special handling for Train Model step:
-                # It might fail at the very end due to missing onnx_tf, but if the .onnx file exists, we are good.
-                if step_name == "Train Model" and ret_code != 0:
+                # Train Model exports ONNX before the optional TFLite conversion, so a TFLite failure keeps the ONNX model
+                if step_name == "Train Model" and ret_code != 0 and export_tflite:
                     onnx_path = Path(config["output_dir"]) / f"{model_name}.onnx"
                     if onnx_path.exists():
-                        st.warning(f"Step {step_name} finished with errors (likely legacy TFLite conversion), but ONNX model was saved. Proceeding...")
+                        st.warning(f"Step {step_name} finished with errors (likely the TFLite conversion), but ONNX model was saved. Proceeding...")
                         ret_code = 0
                 
                 if ret_code != 0:
@@ -622,36 +635,21 @@ if st.session_state.start_training_trigger:
             if success:
                 st.success("Training complete!")
                 
-                # Convert to TFLite (Optional but recommended)
-                st.write("**Step 4: Converting to TFLite...**")
                 onnx_path = Path(config["output_dir"]) / f"{model_name}.onnx"
-                if onnx_path.exists():
-                    try:
-                        # Using onnx2tf command (assuming it's in path or can be run via python -m)
-                        # We'll try running it as a shell command
-                        cmd = f"onnx2tf -i \"{onnx_path}\" -o \"{config['output_dir']}\" -kat onnx____Flatten_0"
-                        run_command(cmd, log_placeholder)
-                        
-                        float32_tflite = Path(config["output_dir"]) / f"{model_name}_float32.tflite"
-                        final_tflite = Path(config["output_dir"]) / f"{model_name}.tflite"
-                        
-                        if float32_tflite.exists():
-                            if final_tflite.exists():
-                                final_tflite.unlink()
-                            float32_tflite.rename(final_tflite)
-                            st.success(f"TFLite model created: {final_tflite.name}")
-                            
-                            # Download Button
-                            with open(final_tflite, "rb") as f:
-                                st.download_button(
-                                    label="Download .tflite Model",
-                                    data=f,
-                                    file_name=f"{model_name}.tflite",
-                                    mime="application/octet-stream"
-                                )
-                    except Exception as e:
-                        st.warning(f"TFLite conversion failed: {e}")
-                
+                if export_tflite:
+                    final_tflite = Path(config["output_dir"]) / f"{model_name}.tflite"
+                    if final_tflite.exists():
+                        st.success(f"TFLite model created: {final_tflite.name}")
+                        with open(final_tflite, "rb") as f:
+                            st.download_button(
+                                label="Download .tflite Model",
+                                data=f,
+                                file_name=f"{model_name}.tflite",
+                                mime="application/octet-stream"
+                            )
+                    else:
+                        st.warning("TFLite conversion failed, see the training log. The ONNX model is not affected.")
+
                 # Download ONNX Button
                 if onnx_path.exists():
                     # Patch ONNX for Android compatibility
@@ -712,7 +710,10 @@ Your wake word model has been trained successfully. Download the models above:
                 # Show file locations
                 output_dir = Path(config["output_dir"])
                 st.info(f"📁 All models saved to: `{output_dir}`")
-            
+            else:
+                # The stored error and log render at the top of the page, which this run has already passed
+                st.rerun()
+
             # Reset training state but DON'T rerun to keep results visible
             st.session_state.training_running = False
             # Removed st.rerun() to keep the results visible!

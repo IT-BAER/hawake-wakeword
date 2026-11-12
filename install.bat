@@ -70,11 +70,16 @@ REM Activate and install
 echo [*] Installing dependencies (this may take a few minutes)...
 call .venv\Scripts\activate.bat
 
-REM Check for GPU
-nvidia-smi >nul 2>&1
-if %errorlevel% equ 0 (
-    echo [*] GPU detected - installing CUDA-enabled PyTorch...
-    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126 -q
+REM Check for GPU: Blackwell (RTX 50, compute 10.0+) has kernels only in CUDA 12.8+ builds; cu126 covers older GPUs
+set "TORCH_INDEX="
+set "CC_MAJOR="
+for /f "tokens=1 delims=." %%a in ('nvidia-smi --query-gpu^=compute_cap --format^=csv^,noheader 2^>nul') do set "CC_MAJOR=%%a"
+if defined CC_MAJOR (
+    if %CC_MAJOR% GEQ 10 (set "TORCH_INDEX=cu130") else (set "TORCH_INDEX=cu126")
+)
+if defined TORCH_INDEX (
+    echo [*] GPU detected - installing CUDA-enabled PyTorch ^(%TORCH_INDEX%^)...
+    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/%TORCH_INDEX% -q
 ) else (
     echo [*] No GPU detected - using CPU version...
     pip install torch torchvision torchaudio -q

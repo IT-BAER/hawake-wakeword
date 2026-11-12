@@ -1,6 +1,6 @@
 #!/bin/bash
 # HAwake WakeWord Training - One-liner Setup
-# Usage: curl -sSL https://raw.githubusercontent.com/IT-BAER/hawake-wakeword/master/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/IT-BAER/hawake-wakeword/main/install.sh | bash
 # Or: ./install.sh
 
 set -e
@@ -17,43 +17,16 @@ echo "  HAwake WakeWord Training Setup"
 echo "========================================"
 echo ""
 
-# Check Python
-if ! command -v python3 &> /dev/null; then
-    echo -e "${YELLOW}[!] Python3 not found! Please install Python 3.11+ first.${NC}"
+# Python 3.11, like install.ps1: piper-phonemize and the pinned packages have wheels for 3.11
+if command -v python3.11 &> /dev/null; then
+    PYTHON_BIN="python3.11"
+elif command -v python3 &> /dev/null && python3 -c 'import sys; sys.exit(sys.version_info[:2] != (3, 11))'; then
+    PYTHON_BIN="python3"
+else
+    echo -e "${RED}[✗] Python 3.11 not found (python3.11 or python3). Install python3.11 and python3.11-venv, then re-run.${NC}"
     exit 1
 fi
-
-PYTHON_BIN="python3"
-PY_MAJOR=$(python3 - <<'PY'
-import sys
-print(sys.version_info.major)
-PY
-)
-PY_MINOR=$(python3 - <<'PY'
-import sys
-print(sys.version_info.minor)
-PY
-)
-
-if [ "$PY_MAJOR" -lt 3 ] || [ "$PY_MAJOR" -eq 3 -a "$PY_MINOR" -lt 11 ]; then
-    if command -v python3.11 &> /dev/null; then
-        PYTHON_BIN="python3.11"
-        echo -e "${YELLOW}[!] python3 is $PY_MAJOR.$PY_MINOR; using python3.11 instead.${NC}"
-    else
-        echo -e "${YELLOW}[!] Python 3.11+ is required. Your python3 is $PY_MAJOR.$PY_MINOR.${NC}"
-        exit 1
-    fi
-fi
-
-if [ "$(uname -s)" = "Linux" ] && [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -eq 12 ]; then
-    if command -v python3.11 &> /dev/null; then
-        PYTHON_BIN="python3.11"
-        echo -e "${YELLOW}[!] Python 3.12 on Linux lacks piper-phonemize wheels; using python3.11 instead.${NC}"
-    else
-        echo -e "${YELLOW}[!] Python 3.12 on Linux lacks piper-phonemize wheels. Install python3.11 and python3.11-venv, then re-run.${NC}"
-        exit 1
-    fi
-fi
+echo -e "${GREEN}[✓] Found $("$PYTHON_BIN" --version) ($PYTHON_BIN)${NC}"
 
 # Clone required repositories if not present
 echo ""
@@ -81,6 +54,10 @@ fi
 if [ ! -d ".venv" ]; then
     echo -e "${CYAN}[*] Creating virtual environment...${NC}"
     "$PYTHON_BIN" -m venv .venv
+elif ! grep -qE '^version(_info)? *= *3\.11\.' .venv/pyvenv.cfg 2>/dev/null; then
+    # A .venv from another Python brings back the wheel failures above
+    echo -e "${RED}[✗] .venv was not created with Python 3.11. Delete the .venv folder and re-run.${NC}"
+    exit 1
 fi
 
 # Activate
@@ -97,13 +74,24 @@ pip_install() {
 
 echo -e "${CYAN}[*] Installing dependencies (this may take a few minutes)...${NC}"
 
-# Check for GPU
-if [ "$FORCE_CPU" = "1" ]; then
-    echo -e "${YELLOW}[!] FORCE_CPU=1 set - installing CPU PyTorch...${NC}"
-    pip_install torch torchvision torchaudio
-elif command -v nvidia-smi &> /dev/null; then
-    echo -e "${GREEN}[✓] GPU detected - installing CUDA-enabled PyTorch...${NC}"
-    pip_install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+# Blackwell (RTX 50, compute 10.0+) has kernels only in CUDA 12.8+ builds; cu126 covers older GPUs.
+# PyPI torch on Linux is the CUDA build with several GB of NVIDIA libraries, so CPU-only uses the CPU index.
+TORCH_INDEX=""
+CC_MAJOR=""
+if [ "$FORCE_CPU" != "1" ] && command -v nvidia-smi &> /dev/null; then
+    CC_MAJOR=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -n1 | cut -d. -f1 || true)
+    if [ -n "$CC_MAJOR" ] && [ "$CC_MAJOR" -ge 10 ] 2>/dev/null; then
+        TORCH_INDEX="cu130"
+    elif [ -n "$CC_MAJOR" ]; then
+        TORCH_INDEX="cu126"
+    fi
+fi
+if [ -n "$TORCH_INDEX" ]; then
+    echo -e "${GREEN}[✓] GPU detected (compute ${CC_MAJOR}.x) - installing CUDA-enabled PyTorch ($TORCH_INDEX)...${NC}"
+    pip_install torch torchvision torchaudio --index-url "https://download.pytorch.org/whl/$TORCH_INDEX"
+elif [ "$(uname -s)" = "Linux" ]; then
+    echo -e "${YELLOW}[!] No GPU or FORCE_CPU=1 - installing CPU PyTorch (training will be slower)${NC}"
+    pip_install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 else
     echo -e "${YELLOW}[!] No GPU detected - using CPU version (training will be slower)${NC}"
     pip_install torch torchvision torchaudio
@@ -112,15 +100,11 @@ fi
 pip_install -r requirements.txt
 pip_install streamlit
 
-# Patch torch_audiomentations if needed (for torchaudio 2.1+ compatibility)
-TA_IO_FILE=".venv/lib/python*/site-packages/torch_audiomentations/utils/io.py"
-for f in $TA_IO_FILE; do
-    if [ -f "$f" ] && grep -q "torchaudio.set_audio_backend" "$f"; then
-        echo -e "${CYAN}[*] Patching torch_audiomentations for torchaudio 2.1+ compatibility...${NC}"
-        sed -i 's/torchaudio\.set_audio_backend([^)]*)/# Removed: torchaudio.set_audio_backend (deprecated in 2.1+)/g' "$f"
-        echo -e "${GREEN}[✓] Patched torch_audiomentations${NC}"
-    fi
-done
+# Compatibility patches, same as install.ps1 (torchaudio 2.1+, PyTorch 2.6+); set -e stops on failure
+echo -e "${CYAN}[*] Checking torch_audiomentations compatibility...${NC}"
+python patch_torch_audiomentations.py
+echo -e "${CYAN}[*] Checking DeepPhonemizer compatibility...${NC}"
+python patch_dp.py
 
 # Patch speechbrain if needed (for torchaudio 2.1+ compatibility)
 SB_FILE=".venv/lib/python*/site-packages/speechbrain/utils/torch_audio_backend.py"

@@ -113,7 +113,7 @@ Write-Host "[*] Installing dependencies (this may take a few minutes)..." -Foreg
 
 # Check for GPU and determine compute capability
 $hasGpu = $false
-$needsNightly = $false
+$needsCuda13 = $false
 $computeCap = ""
 try {
     $gpuInfo = nvidia-smi --query-gpu=compute_cap,name --format=csv,noheader 2>&1
@@ -122,13 +122,11 @@ try {
         $computeCap = ($gpuInfo -split ",")[0].Trim()
         $gpuName = ($gpuInfo -split ",")[1].Trim()
         
-        # Check if GPU is RTX 50-series (Blackwell, compute capability 12.0+)
-        # or RTX 40-series (Ada Lovelace, compute capability 8.9)
+        # Blackwell (RTX 50, compute 10.0+) has kernels only in CUDA 12.8+ builds; cu126 covers older GPUs
         $majorCap = [int]($computeCap -split "\.")[0]
-        if ($majorCap -ge 12) {
-            $needsNightly = $true
-            Write-Host "[!] Detected $gpuName (compute $computeCap) - RTX 50-series/Blackwell detected" -ForegroundColor Yellow
-            Write-Host "    Using PyTorch nightly for best GPU support" -ForegroundColor Yellow
+        if ($majorCap -ge 10) {
+            $needsCuda13 = $true
+            Write-Host "[✓] Detected $gpuName (compute $computeCap) - Blackwell, using the CUDA 13.0 build" -ForegroundColor Green
         } else {
             Write-Host "[✓] Detected $gpuName (compute $computeCap)" -ForegroundColor Green
         }
@@ -138,10 +136,10 @@ try {
 }
 
 if ($hasGpu) {
-    if ($needsNightly) {
-        Write-Host "[*] Installing PyTorch nightly with CUDA 12.8 (for RTX 50-series support)..." -ForegroundColor Cyan
-        Write-Host "    Note: PyTorch nightly is ~2.9GB - this may take 5-15 minutes" -ForegroundColor Gray
-        pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
+    if ($needsCuda13) {
+        Write-Host "[*] Installing CUDA-enabled PyTorch (CUDA 13.0, needs NVIDIA driver 580+)..." -ForegroundColor Cyan
+        Write-Host "    Note: PyTorch is ~2.5GB - this may take a few minutes" -ForegroundColor Gray
+        pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
     } else {
         Write-Host "[✓] GPU detected - installing CUDA-enabled PyTorch..." -ForegroundColor Green
         Write-Host "    Note: PyTorch is ~2.5GB - this may take a few minutes" -ForegroundColor Gray

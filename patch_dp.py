@@ -75,4 +75,5 @@ def patch_dp():
     return False
 
 if __name__ == "__main__":
-    patch_dp()
+    # Non-zero exit lets the installers stop here instead of failing later in training
+    sys.exit(0 if patch_dp() else 1)

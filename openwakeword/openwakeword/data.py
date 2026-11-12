@@ -234,9 +234,6 @@ def estimate_clip_duration(audio_files: list, sizes: list):
         list: A list of durations (in seconds) for the audio files
     """
 
-    # Determine file type by checking the first file
-    details = torchaudio.info(audio_files[0])
-
     # Caculate any correction factors needed from the first file
     details = mutagen.File(audio_files[0])
     correction = 8*os.path.getsize(audio_files[0]) - details.info.bitrate*details.info.length
@@ -268,16 +265,16 @@ def estimate_mp3_duration(fpath):
 
     duration_seconds = 0
     try:
-        md = torchaudio.info(fpath)
+        md = sf.info(fpath)
     except RuntimeError:
         return duration_seconds
 
     nbytes = os.path.getsize(fpath)
-    if md.num_channels == 1:
-        if md.sample_rate == 16000:
+    if md.channels == 1:
+        if md.samplerate == 16000:
             duration_seconds = nbytes*conversion_factors["16_khz_single_channel"]
-    elif md.num_channels == 2:
-        if md.sample_rate == 16000:
+    elif md.channels == 2:
+        if md.samplerate == 16000:
             duration_seconds = nbytes*conversion_factors["16_khz_stereo"]
 
     return duration_seconds
@@ -285,12 +282,13 @@ def estimate_mp3_duration(fpath):
 
 def get_clip_duration(clip):
     """Gets the duration of an audio clip in seconds from file header information"""
+    # soundfile, not torchaudio.info: torchaudio 2.9 removed info()
     try:
-        metadata = torchaudio.info(clip)
+        metadata = sf.info(clip)
     except RuntimeError:  # skip cases where file metadata can't be read
         return 0
 
-    return metadata.num_frames/metadata.sample_rate
+    return metadata.frames/metadata.samplerate
 
 
 def get_wav_duration_from_filesize(size, nbytes=2):
@@ -713,7 +711,7 @@ def augment_clips(
 
         # Do reverberation
         if augmentation_probabilities["RIR"] >= np.random.random() and RIR_paths != []:
-            rir_waveform, sr = torchaudio.load(random.choice(RIR_paths))
+            rir_waveform, _ = torchaudio.load(random.choice(RIR_paths))
             augmented_batch = reverberate(augmented_batch.cpu(), rir_waveform, rescale_amp="avg")
 
         # yield batch of 16-bit PCM audio data

@@ -13,6 +13,7 @@ number_of_examples = 1000
 number_of_training_steps = 1000
 false_activation_penalty = 1500
 language = 'en'  # 'en' for English, 'de' for German
+export_tflite = False  # True needs: pip install -r requirements-tflite.txt (HAwake Android uses only ONNX)
 
 # TTS model mapping
 TTS_MODELS = {
@@ -28,7 +29,7 @@ def run_command(cmd):
     process.wait()
     if process.returncode != 0:
         print(f"Command failed with return code {process.returncode}")
-        # sys.exit(process.returncode)
+        sys.exit(process.returncode)
 
 def main():
     # 1. Prepare Paths
@@ -59,7 +60,9 @@ def main():
         print(f"   Run 'python quickstart.py' to download or set language to a supported value.")
 
     # Set data paths relative to project root
-    config["background_paths"] = [str(project_root / 'audioset_16k'), str(project_root / 'fma')]
+    config["background_paths"] = [str(p) for p in (project_root / 'audioset_16k', project_root / 'fma') if p.is_dir()]
+    if not config["background_paths"]:
+        sys.exit("No background audio found. Run 'python download_data.py' first.")
     config["false_positive_validation_data_path"] = str(project_root / "validation_set_features.npy")
     
     # Feature data files - use if available, otherwise empty
@@ -93,23 +96,10 @@ def main():
     run_command([python_exe, train_script, "--training_config", "my_model.yaml", "--augment_clips"])
 
     print("\n--- Step 3: Train Model ---")
-    run_command([python_exe, train_script, "--training_config", "my_model.yaml", "--train_model"])
+    run_command([python_exe, train_script, "--training_config", "my_model.yaml", "--train_model"]
+                + (["--convert_to_tflite"] if export_tflite else []))
 
-    print("\n--- Step 4: Convert to TFLite (Optional) ---")
-    onnx_path = Path(config["output_dir"]) / f"{config['model_name']}.onnx"
-    if onnx_path.exists():
-        # Using onnx2tf as in the colab script
-        run_command(f"onnx2tf -i {onnx_path} -o {config['output_dir']} -kat onnx____Flatten_0")
-        # Rename if needed (logic from colab)
-        float32_tflite = Path(config["output_dir"]) / f"{config['model_name']}_float32.tflite"
-        final_tflite = Path(config["output_dir"]) / f"{config['model_name']}.tflite"
-        if float32_tflite.exists():
-            if final_tflite.exists():
-                os.remove(final_tflite)
-            os.rename(float32_tflite, final_tflite)
-            print(f"TFLite model created at {final_tflite}")
-
-    print("\nTraining process finished.")
+    print(f"\nTraining process finished. Model: {Path(config['output_dir']) / (config['model_name'] + '.onnx')}")
 
 if __name__ == "__main__":
     main()

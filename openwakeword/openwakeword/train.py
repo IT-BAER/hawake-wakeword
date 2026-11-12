@@ -642,35 +642,42 @@ if __name__ == '__main__':
         "--generate_clips",
         help="Execute the synthetic data generation process",
         action="store_true",
-        default="False",
+        default=False,
         required=False
     )
     parser.add_argument(
         "--augment_clips",
         help="Execute the synthetic data augmentation process",
         action="store_true",
-        default="False",
+        default=False,
         required=False
     )
     parser.add_argument(
         "--overwrite",
         help="Overwrite existing openwakeword features when the --augment_clips flag is used",
         action="store_true",
-        default="False",
+        default=False,
         required=False
     )
     parser.add_argument(
         "--train_model",
         help="Execute the model training process",
         action="store_true",
-        default="False",
+        default=False,
         required=False
     )
     parser.add_argument(
         "--force_cpu",
         help="Force the use of CPU even if CUDA is available",
         action="store_true",
-        default="False",
+        default=False,
+        required=False
+    )
+    parser.add_argument(
+        "--convert_to_tflite",
+        help="Also convert the trained ONNX model to TFLite (needs requirements-tflite.txt)",
+        action="store_true",
+        default=False,
         required=False
     )
 
@@ -753,7 +760,7 @@ if __name__ == '__main__':
             os.mkdir(negative_train_output_dir)
         n_current_samples = len(os.listdir(negative_train_output_dir))
         if n_current_samples <= 0.95*config["n_samples"]:
-            adversarial_texts = config["custom_negative_phrases"]
+            adversarial_texts = list(config["custom_negative_phrases"])
             adversarial_fn = generate_adversarial_texts_german if config.get("language", "en") == "de" else generate_adversarial_texts
             for target_phrase in config["target_phrase"]:
                 adversarial_texts.extend(adversarial_fn(
@@ -780,7 +787,7 @@ if __name__ == '__main__':
             os.mkdir(negative_test_output_dir)
         n_current_samples = len(os.listdir(negative_test_output_dir))
         if n_current_samples <= 0.95*config["n_samples_val"]:
-            adversarial_texts = config["custom_negative_phrases"]
+            adversarial_texts = list(config["custom_negative_phrases"])
             adversarial_fn = generate_adversarial_texts_german if config.get("language", "en") == "de" else generate_adversarial_texts
             for target_phrase in config["target_phrase"]:
                 adversarial_texts.extend(adversarial_fn(
@@ -946,19 +953,9 @@ if __name__ == '__main__':
             def __iter__(self):
                 return self.generator
 
-        n_cpus = os.cpu_count()
-        if n_cpus is None:
-            n_cpus = 1
-        else:
-            n_cpus = n_cpus//2
-        
-        # On Windows, using num_workers > 0 often causes PicklingErrors with complex generators
-        # Setting to 0 for maximum compatibility.
-        if os.name == 'nt':
-            n_cpus = 0
-
-        X_train = torch.utils.data.DataLoader(IterDataset(batch_generator),
-                                              batch_size=None, num_workers=n_cpus, prefetch_factor=16 if n_cpus > 0 else None)
+        # num_workers=0: each worker would get its own copy of the batch generator and repeat every batch
+        # (and Windows hits PicklingErrors with it)
+        X_train = torch.utils.data.DataLoader(IterDataset(batch_generator), batch_size=None, num_workers=0)
 
 
         X_val_fp = np.load(config["false_positive_validation_data_path"])
@@ -966,7 +963,7 @@ if __name__ == '__main__':
         X_val_fp_labels = np.zeros(X_val_fp.shape[0]).astype(np.float32)
         X_val_fp = torch.utils.data.DataLoader(
             torch.utils.data.TensorDataset(torch.from_numpy(X_val_fp), torch.from_numpy(X_val_fp_labels)),
-            batch_size=len(X_val_fp_labels)
+            batch_size=min(8192, len(X_val_fp_labels))
         )
 
         X_val_pos = np.load(os.path.join(feature_save_dir, "positive_features_test.npy"))
@@ -995,5 +992,6 @@ if __name__ == '__main__':
         oww.export_model(model=best_model, model_name=config["model_name"], output_dir=config["output_dir"])
 
         # Convert the model from onnx to tflite format
-        convert_onnx_to_tflite(os.path.join(config["output_dir"], config["model_name"] + ".onnx"),
-                               os.path.join(config["output_dir"], config["model_name"] + ".tflite"))
+        if args.convert_to_tflite:
+            convert_onnx_to_tflite(os.path.join(config["output_dir"], config["model_name"] + ".onnx"),
+                                   os.path.join(config["output_dir"], config["model_name"] + ".tflite"))

@@ -8,19 +8,11 @@ audiomentations==0.33.0
 torch-audiomentations>=0.11.1  # 0.11.1+ removes deprecated set_audio_backend call
 acoustics==0.2.6
 onnxruntime-gpu==1.20.2
-onnxsim
-onnx2tf==1.28.8  # TFLite export in app.py; this set matches openwakeword[full]
-tensorflow==2.19.0
-tf-keras==2.19.0
-sne4onnx>=1.0.11,<3
-psutil>=5.9.5,<8
-ai-edge-litert>=2.1.2,<3
-onnx
-onnx_graphsurgeon
-sng4onnx
+onnx>=1.22.0
 pronouncing==0.2.0
-datasets==2.14.6
-pyarrow>=8.0.0,<18
+huggingface_hub>=0.14.0,<1  # download_rirs.py
+pyarrow>=8.0.0,<18  # AudioSet parquet in download_data.py; pyarrow>=21 needs numpy 2
+pandas  # pyarrow Table.to_pandas() in download_data.py
 deep-phonemizer==0.0.19
 scipy>=1.7.0,<1.14.0  # Pin to avoid sph_harm removal in 1.14+
 tqdm

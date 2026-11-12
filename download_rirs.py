@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 def download_and_process_rirs():
     output_dir = Path("mit_rirs")
-    if output_dir.exists() and any(output_dir.iterdir()):
-        print("mit_rirs directory exists and is not empty. Skipping download.")
+    if output_dir.exists() and len(list(output_dir.glob("*.wav"))) >= 100:
+        print("mit_rirs already has 100+ wav files. Skipping download.")
         return
 
     print("Downloading MIT Environmental Impulse Responses...")

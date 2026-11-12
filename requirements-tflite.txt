@@ -1,0 +1,12 @@
+# Optional TFLite export: "Also export TFLite" in the WebUI, --convert_to_tflite in train.py.
+# HAwake Android uses only the ONNX model. Install after requirements.txt:
+#   pip install -r requirements-tflite.txt
+onnx2tf==1.28.8  # same set as openwakeword[full]
+tensorflow==2.19.0
+tf-keras==2.19.0
+onnxsim
+onnx_graphsurgeon
+sng4onnx
+sne4onnx>=1.0.11,<3
+psutil>=5.9.5,<8
+ai-edge-litert>=2.1.2,<3

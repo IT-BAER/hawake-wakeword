@@ -53,11 +53,11 @@ setuptools.setup(
                 ],
         'full': [
                     'mutagen>=1.46.0,<2',
-                    'torch>=1.13.1,<3',
-                    'torchaudio>=0.13.1,<1',
+                    'torch>=2.7.1,<3',
+                    'torchaudio>=2.7.1,<3',
                     'torchinfo>=1.8.0,<2',
-                    'torchmetrics>=0.11.4,<1',
-                    'speechbrain>=0.5.14,<1',
+                    'torchmetrics>=1.2.0,<2',
+                    'speechbrain>=1.0,<2',
                     'audiomentations>=0.30.0,<1',
                     'torch-audiomentations>=0.11.0,<1',
                     'tqdm>=4.64.0,<5',
@@ -66,6 +66,8 @@ setuptools.setup(
                     'pytest-flake8>=1.1.1,<2',
                     'pytest-mypy>=0.10.0,<1',
                     'acoustics>=0.2.6,<1',
+                    'scipy>=1.7.0,<1.14.0',  # acoustics imports scipy.special.sph_harm (removed in 1.14)
+                    'setuptools<81',  # a dependency of openwakeword.train imports pkg_resources (removed in 81)
                     'pyyaml>=6.0,<7',
                     'tensorflow==2.19.0',
                     'numpy>=1.26,<2',
@@ -78,9 +80,8 @@ setuptools.setup(
                     'sne4onnx>=1.0.11,<3',
                     'psutil>=5.9.5,<8',
                     'ai-edge-litert>=2.1.2,<3',
-                    'onnx==1.21.0',
+                    'onnx>=1.22.0,<2',
                     'pronouncing>=0.2.0,<1',
-                    'datasets>=2.14.4,<3',
                     'deep-phonemizer==0.0.19'
                 ]
     },

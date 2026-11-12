@@ -51,54 +51,29 @@ def download_with_progress(url: str, dest: str, description: str = None):
 
 
 def download_mit_rirs():
-    """Download MIT Room Impulse Responses using HuggingFace datasets."""
+    """Download MIT Room Impulse Responses (same source and code as download_rirs.py)."""
     print("\n" + "="*60)
     print("Step 1: Downloading MIT Room Impulse Responses")
     print("="*60)
-    
+
     output_dir = Path("mit_rirs")
-    
+
     # Check if already has content
     if output_dir.exists() and len(list(output_dir.glob("*.wav"))) >= 100:
         count = len(list(output_dir.glob("*.wav")))
         print(f"[✓] mit_rirs already has {count} files")
         return True
-    
-    output_dir.mkdir(exist_ok=True)
-    
+
     try:
-        import scipy.io.wavfile
-        import numpy as np
-        from tqdm import tqdm
-        import datasets
-    except ImportError as e:
-        print(f"[!] Missing dependency: {e}")
-        print("    Please run: pip install scipy numpy tqdm datasets")
-        return False
-    
-    print("Downloading MIT RIRs from HuggingFace...")
-    print("Source: davidscripka/MIT_environmental_impulse_responses")
-    
-    try:
-        rir_dataset = datasets.load_dataset(
-            "davidscripka/MIT_environmental_impulse_responses",
-            split="train",
-            streaming=True
-        )
-        
-        count = 0
-        for row in tqdm(rir_dataset, desc="Downloading RIRs"):
-            name = row['audio']['path'].split('/')[-1]
-            audio = (np.array(row['audio']['array']) * 32767).astype(np.int16)
-            scipy.io.wavfile.write(output_dir / name, 16000, audio)
-            count += 1
-        
-        print(f"\n[✓] Downloaded {count} MIT RIR files")
-        return count > 0
-        
+        from download_rirs import download_and_process_rirs
+        download_and_process_rirs()
     except Exception as e:
         print(f"[!] Error downloading MIT RIRs: {e}")
         return False
+
+    count = len(list(output_dir.glob("*.wav"))) if output_dir.exists() else 0
+    print(f"\n[✓] mit_rirs has {count} MIT RIR files")
+    return count > 0
 
 
 def download_background_audio_simple():

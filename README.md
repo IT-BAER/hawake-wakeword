@@ -77,7 +77,7 @@ Example full cleanup:
 
 ## Requirements
 
-- Python 3.11+ (Linux/WSL: use 3.11; Python 3.12 lacks piper-phonemize manylinux wheels and requires a source build)
+- Python 3.11 (the installers check for it; newer Python versions lack wheels for piper-phonemize and other pinned packages)
 - CUDA (optional, for GPU acceleration)
 - ~10GB disk space (training data + models)
 
@@ -93,6 +93,8 @@ cd hawake-wakeword
 python -m venv .venv
 .venv\Scripts\activate  # Windows
 pip install -r requirements.txt
+python patch_torch_audiomentations.py   # torchaudio 2.1+ compatibility
+python patch_dp.py                      # PyTorch 2.6+ compatibility
 ```
 
 ### 2. Download Training Data
@@ -153,6 +155,14 @@ cp my_model/my_wake_word.onnx /path/to/hawake-android/app/src/main/assets/
 
 Or upload via the HAwake app's "Manage Wake Words" dialog.
 
+### Optional: TFLite export
+
+HAwake Android uses only the `.onnx` model. For a `.tflite` copy, install the extra packages (~1 GB with TensorFlow) and tick **Also export TFLite** in the WebUI, or set `export_tflite = True` in `train_local.py`:
+
+```bash
+pip install -r requirements-tflite.txt
+```
+
 ## ONNX Compatibility
 
 Models are exported with:
@@ -187,7 +197,7 @@ python check_opset.py my_model.onnx
 
 | Issue | Solution |
 |-------|----------|
-| GPU detected but "no kernel image" | Very new GPU (e.g., RTX 50 series). Use "Force CPU Mode" checkbox in WebUI |
+| GPU detected but "no kernel image" | The installers pick the CUDA 13.0 PyTorch build for RTX 50 series (needs NVIDIA driver 580+). Update the driver, re-run the installer, or use "Force CPU Mode" in the WebUI |
 | Training fails on GPU | Enable "Force CPU Mode" in WebUI sidebar |
 | CUDA not available | Install NVIDIA drivers or use CPU mode |
 | Wrong GPU detected | Set `CUDA_VISIBLE_DEVICES=0` environment variable |

@@ -1,16 +1,12 @@
-import os
 import sys
 import yaml
 import subprocess
 from pathlib import Path
 
-# Force CPU to avoid CUDA kernel errors on RTX 5060 Ti
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-
-# Configuration
+# Configuration (same defaults as the Web UI; set CUDA_VISIBLE_DEVICES=-1 to force CPU)
 target_word = 'hey mycroft'
-number_of_examples = 1000 
-number_of_training_steps = 1000
+number_of_examples = 5000
+number_of_training_steps = 5000
 false_activation_penalty = 1500
 language = 'en'  # 'en' for English, 'de' for German
 export_tflite = False  # True needs: pip install -r requirements-tflite.txt (HAwake Android uses only ONNX)
@@ -25,7 +21,8 @@ python_exe = sys.executable
 
 def run_command(cmd):
     print(f"Executing: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
-    process = subprocess.Popen(cmd, shell=False)
+    # Relative paths in the config resolve against the project root, not the caller's cwd
+    process = subprocess.Popen(cmd, shell=False, cwd=Path(__file__).parent)
     process.wait()
     if process.returncode != 0:
         print(f"Command failed with return code {process.returncode}")
@@ -81,7 +78,7 @@ def main():
     # The piper generator might fail on Windows if dependencies are missing.
     # We will try to run it but keep going.
 
-    with open('my_model.yaml', 'w') as file:
+    with open(project_root / 'my_model.yaml', 'w') as file:
         yaml.dump(config, file)
 
     print(f"Config generated for wake word: {target_word}")

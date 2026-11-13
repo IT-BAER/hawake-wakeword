@@ -153,7 +153,7 @@ For advanced users:
 python train_local.py
 ```
 
-Edit the file to configure:
+It uses the same defaults as the WebUI and the GPU when one is available (set `CUDA_VISIBLE_DEVICES=-1` to force CPU). Edit the file to configure:
 - `target_word` - Your wake word
 - `number_of_examples` - Training sample count
 - `number_of_training_steps` - Training iterations

@@ -75,7 +75,7 @@ def main():
         # Remove ACAV100M_sample from batch_n_per_class since we don't have the feature file
         if "batch_n_per_class" in config and "ACAV100M_sample" in config["batch_n_per_class"]:
             del config["batch_n_per_class"]["ACAV100M_sample"]
-        print("⚠️ Large feature file not found (~16GB). Training will work using AudioSet background audio.")
+        print("⚠️ Training features not found (17 GB): the model will react to normal speech. Run 'python download_data.py' first.")
 
     # Update generation config if needed
     # The piper generator might fail on Windows if dependencies are missing.

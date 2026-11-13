@@ -147,20 +147,35 @@ if not exist "mit_rirs" (
 )
 
 REM Download background audio data (required for training)
-if not exist "audioset_16k\*.wav" (
+REM Only real AudioSet clips count: noise_*.wav from the synthetic fallback must not skip a retry
+set "NEED_DATA="
+if not exist "audioset_16k\audioset_*.wav" set "NEED_DATA=1"
+if not exist "openwakeword_features_ACAV100M_2000_hrs_16bit.npy" set "NEED_DATA=1"
+if defined NEED_DATA (
     echo.
-    echo [*] Downloading background audio data ^(~3-5 GB^)...
-    echo     This is required for training and may take 10-30 minutes
+    echo [*] Downloading training data ^(about 19 GB^)...
+    echo     This is required for training and may take 10-60 minutes
     echo.
     python download_data.py
-    if exist "audioset_16k\*.wav" (
+    if exist "audioset_16k\audioset_*.wav" (
         echo [OK] Background audio downloaded
     ) else (
         echo [WARNING] Could not download background audio
         echo Run 'python download_data.py' manually before training
     )
 ) else (
-    echo [OK] Background audio exists
+    echo [OK] Training data exists
+)
+
+if not exist "audioset_16k\audioset_*.wav" (
+    echo.
+    echo [WARNING] No real background audio ^(AudioSet download failed or skipped^).
+    echo A model trained now false-triggers often. Run: python download_data.py
+)
+if not exist "openwakeword_features_ACAV100M_2000_hrs_16bit.npy" (
+    echo.
+    echo [WARNING] Training features ^(17 GB^) missing. A model trained now reacts to normal speech.
+    echo Run: python download_data.py
 )
 
 echo.

@@ -247,10 +247,10 @@ if ($Fast) {
     }
 
     # Download background audio data (required for training)
-    if (-not (Test-Path "audioset_16k") -or (Get-ChildItem "audioset_16k" -Filter "*.wav" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
+    # Only real AudioSet clips count: noise_*.wav from the synthetic fallback must not skip a retry
+    if (-not (Test-Path "audioset_16k") -or (Get-ChildItem "audioset_16k" -Filter "audioset_*.wav" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0 -or -not (Test-Path "openwakeword_features_ACAV100M_2000_hrs_16bit.npy")) {
         Write-Host "" -ForegroundColor Cyan
-        Write-Host "[*] Downloading background audio data..." -ForegroundColor Cyan
-        Write-Host "    Using parallel downloads for faster completion" -ForegroundColor Gray
+        Write-Host "[*] Downloading training data (about 19 GB)..." -ForegroundColor Cyan
         Write-Host "" -ForegroundColor Gray
         try {
             python download_data.py
@@ -260,9 +260,20 @@ if ($Fast) {
             Write-Host "    Run 'python download_data.py' manually before training" -ForegroundColor Yellow
         }
     } else {
-        $audiosetCount = (Get-ChildItem "audioset_16k" -Filter "*.wav" | Measure-Object).Count
+        $audiosetCount = (Get-ChildItem "audioset_16k" -Filter "audioset_*.wav" | Measure-Object).Count
         Write-Host "[✓] Background audio exists ($audiosetCount files)" -ForegroundColor Green
     }
+}
+
+if ((Get-ChildItem "audioset_16k" -Filter "audioset_*.wav" -ErrorAction SilentlyContinue | Measure-Object).Count -eq 0) {
+    Write-Host ""
+    Write-Host "[!] WARNING: no real background audio (AudioSet download failed or skipped)." -ForegroundColor Yellow
+    Write-Host "    A model trained now false-triggers often. Run: python download_data.py" -ForegroundColor Yellow
+}
+if (-not (Test-Path "openwakeword_features_ACAV100M_2000_hrs_16bit.npy")) {
+    Write-Host ""
+    Write-Host "[!] WARNING: training features (17 GB) missing. A model trained now reacts to normal speech." -ForegroundColor Yellow
+    Write-Host "    Run: python download_data.py" -ForegroundColor Yellow
 }
 
 Write-Host ""

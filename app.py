@@ -22,7 +22,7 @@ except ImportError as e:
     PIPER_AVAILABLE = False
     st.error(f"Failed to import piper-sample-generator logic: {e}")
 
-st.set_page_config(page_title="OpenWakeWord Trainer", layout="wide")
+st.set_page_config(page_title="HAwake Wake Word Trainer", layout="wide")
 
 # Initialize session state for process management
 if 'training_running' not in st.session_state:
@@ -34,7 +34,9 @@ if 'training_error' not in st.session_state:
 if 'training_log' not in st.session_state:
     st.session_state.training_log = None
 
-st.title("OpenWakeWord Custom Model Trainer")
+st.title("HAwake Wake Word Trainer")
+st.caption("Train a custom wake word for the [HAwake](https://play.google.com/store/apps/details?id=com.baer.hawake) Android app: "
+           "1. preview the pronunciation, 2. train, 3. load the model in HAwake.")
 
 # --- Sidebar Configuration ---
 st.sidebar.header("Configuration")
@@ -109,22 +111,22 @@ else:
     st.sidebar.success(f"✅ TTS: {tts_model_name}")
 
 st.sidebar.subheader("Training Parameters")
-number_of_examples = st.sidebar.slider("Number of Examples", min_value=100, max_value=50000, value=5000, step=100, help="How many synthetic examples to generate. More is generally better but takes longer.")
-number_of_training_steps = st.sidebar.slider("Training Steps", min_value=100, max_value=50000, value=5000, step=100, help="How many steps to train the model.")
+number_of_examples = st.sidebar.slider("Number of Examples", min_value=100, max_value=50000, value=5000, step=100, help="How many synthetic voice clips to generate. Generation runs on the CPU, even with a GPU: about 25 minutes per 1000 examples on a 6-core CPU.")
+number_of_training_steps = st.sidebar.slider("Training Steps", min_value=100, max_value=50000, value=5000, step=100, help="How many steps to train the model. More steps detect the wake word more often, but also react more often to other speech. With Resume Training on, a new run with other steps reuses the clips and takes minutes.")
 false_activation_penalty = st.sidebar.slider("False Activation Penalty", min_value=100, max_value=5000, value=1500, step=50, help="Penalizes false positives. Higher values reduce false positives but might lower recall.")
 
-st.sidebar.subheader("ONNX Export")
-onnx_opset = st.sidebar.selectbox(
+# HAwake needs opset 11; the other values only matter for other runtimes
+advanced_export = st.sidebar.expander("Advanced export (not needed for HAwake)")
+onnx_opset = advanced_export.selectbox(
     "Target Opset Version",
     options=[11, 10, 12, 13],
-    index=0,  # Default to Opset 11
-    help="Opset 11 recommended for Android 8+ compatibility with best operator support."
+    index=0,
+    help="HAwake needs opset 11. Change it only for other ONNX runtimes."
 )
-st.sidebar.caption("ℹ️ Opset 11 is recommended for Android 8+ devices")
 
 import importlib.util
 TFLITE_AVAILABLE = importlib.util.find_spec("onnx2tf") is not None
-export_tflite = st.sidebar.checkbox(
+export_tflite = advanced_export.checkbox(
     "Also export TFLite",
     value=False,
     disabled=not TFLITE_AVAILABLE,
@@ -136,6 +138,11 @@ def check_gpu_compatibility():
     import torch
     
     if not torch.cuda.is_available():
+        # nvidia-smi works but PyTorch sees no GPU: usually a driver older than the PyTorch CUDA build needs
+        if torch.version.cuda and shutil.which("nvidia-smi") and subprocess.run(
+                ["nvidia-smi"], capture_output=True).returncode == 0:
+            return False, (f"NVIDIA GPU found, but PyTorch (CUDA {torch.version.cuda}) cannot use it. "
+                           "Update the NVIDIA driver (CUDA 13 builds need 580+) and restart, or train on CPU.")
         return False, "CUDA not available (no GPU driver or PyTorch CPU-only build)"
     
     try:
@@ -189,6 +196,15 @@ if use_cpu:
     st.sidebar.warning("🖥️ Using CPU for training")
 else:
     st.sidebar.success("⚡ Using GPU for training")
+
+# download_data.py falls back to synthetic noise when AudioSet fails; such models false-trigger a lot
+_bg_dir = current_dir / "audioset_16k"
+if any(_bg_dir.glob("noise_*.wav")) and not any(_bg_dir.glob("audioset_*.wav")):
+    st.sidebar.warning("⚠️ Background audio is synthetic noise only (AudioSet download failed). "
+                       "The model will false-trigger often. Run `python download_data.py` again.")
+if not (current_dir / "openwakeword_features_ACAV100M_2000_hrs_16bit.npy").exists():
+    st.sidebar.warning("⚠️ Training features (17 GB) missing: the model will react to normal speech. "
+                       "Run `python download_data.py` before you train.")
 
 # --- Resume/Checkpoint Options ---
 st.sidebar.markdown("---")
@@ -513,7 +529,8 @@ if st.session_state.start_training_trigger:
             # batch_n_per_class keys must match feature_data_files keys (plus positive/adversarial_negative)
             if "batch_n_per_class" in config and "ACAV100M_sample" in config["batch_n_per_class"]:
                 del config["batch_n_per_class"]["ACAV100M_sample"]
-            st.warning("⚠️ Large feature file not found (~16GB). Training will work using AudioSet background audio.")
+            st.warning("⚠️ Training features `openwakeword_features_ACAV100M_2000_hrs_16bit.npy` not found (17 GB). "
+                       "Without them the model reacts to normal speech. Run `python download_data.py` first.")
         
         # RIR paths - use empty list if folder doesn't exist (RIRs are optional but improve quality)
         rir_dir = current_dir / "mit_rirs"
@@ -633,24 +650,10 @@ if st.session_state.start_training_trigger:
                 progress_bar.progress((i + 1) / len(steps))
             
             if success:
-                st.success("Training complete!")
-                
                 onnx_path = Path(config["output_dir"]) / f"{model_name}.onnx"
-                if export_tflite:
-                    final_tflite = Path(config["output_dir"]) / f"{model_name}.tflite"
-                    if final_tflite.exists():
-                        st.success(f"TFLite model created: {final_tflite.name}")
-                        with open(final_tflite, "rb") as f:
-                            st.download_button(
-                                label="Download .tflite Model",
-                                data=f,
-                                file_name=f"{model_name}.tflite",
-                                mime="application/octet-stream"
-                            )
-                    else:
-                        st.warning("TFLite conversion failed, see the training log. The ONNX model is not affected.")
+                if export_tflite and not (Path(config["output_dir"]) / f"{model_name}.tflite").exists():
+                    st.warning("TFLite conversion failed, see the training log. The ONNX model is not affected.")
 
-                # Download ONNX Button
                 if onnx_path.exists():
                     # Patch ONNX for Android compatibility
                     try:
@@ -688,33 +691,57 @@ if st.session_state.start_training_trigger:
                             st.info(f"Model already compatible (Opset {onnx_opset}, IR v{model.ir_version})")
                     except Exception as e:
                         st.warning(f"Could not patch model: {e}")
-                    
-                    # Download FP32 model
-                    with open(onnx_path, "rb") as f:
-                        st.download_button(
-                            label=f"📥 Download Model (Opset {onnx_opset})",
-                            data=f,
-                            file_name=f"{model_name}.onnx",
-                            mime="application/octet-stream"
-                        )
-                
-                # ========================================
-                # TRAINING COMPLETE - Show final summary
-                # ========================================
+
                 st.balloons()
-                st.success("""🎉 **Training Complete!**
-                
-Your wake word model has been trained successfully. Download the models above:
-- **ONNX Model**: Standard FP32 precision model""")
-                
-                # Show file locations
-                output_dir = Path(config["output_dir"])
-                st.info(f"📁 All models saved to: `{output_dir}`")
+                st.success(f"🎉 **Training complete!** Your model `{model_name}.onnx` is ready. "
+                           "Download it and load it in HAwake in step 3 below.")
             else:
                 # The stored error and log render at the top of the page, which this run has already passed
                 st.rerun()
 
-            # Reset training state but DON'T rerun to keep results visible
+            # No rerun here: the success messages above stay visible
             st.session_state.training_running = False
-            # Removed st.rerun() to keep the results visible!
 
+
+# --- Hand-off to HAwake (rendered on every run, so downloads survive reruns) ---
+def lan_url():
+    """URL a phone on the same network can open; None when no LAN address is found."""
+    import socket
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))  # UDP connect sends nothing; it only picks the outgoing interface
+            ip = s.getsockname()[0]
+    except OSError:
+        return None
+    return None if ip.startswith("127.") else f"http://{ip}:{st.get_option('server.port')}"
+
+
+st.header("3. Use your model in HAwake")
+trained = sorted((d for d in current_dir.iterdir() if d.is_dir() and (d / f"{d.name}.onnx").exists()),
+                 key=lambda d: (d.name != model_name, -(d / f"{d.name}.onnx").stat().st_mtime))
+if not trained:
+    st.info("No trained model yet. Your model appears here after step 2.")
+else:
+    for d in trained:
+        cols = st.columns([3, 2, 2])
+        cols[0].markdown(f"**{d.name}.onnx** ({(d / f'{d.name}.onnx').stat().st_size // 1024} KB)")
+        cols[1].download_button(f"📥 Download {d.name}.onnx", data=(d / f"{d.name}.onnx").read_bytes(),
+                                file_name=f"{d.name}.onnx", mime="application/octet-stream", key=f"dl_onnx_{d.name}")
+        if (d / f"{d.name}.tflite").exists():
+            cols[2].download_button(f"Download {d.name}.tflite", data=(d / f"{d.name}.tflite").read_bytes(),
+                                    file_name=f"{d.name}.tflite", mime="application/octet-stream", key=f"dl_tfl_{d.name}")
+    url = lan_url()
+    phone = (f"On the phone (same Wi-Fi as this PC), open **{url}** in the browser, scroll to this step and tap "
+             "**Download**. If the page does not load, allow Python in the Windows firewall for private networks, "
+             "or copy the file over USB or a cloud drive."
+             if url else "Copy the file to the phone, for example over USB or a cloud drive.")
+    st.markdown(f"""
+**Load the model in HAwake:**
+1. Get the `.onnx` file onto the phone. {phone}
+2. Open HAwake and tap the **Wake Word Service** card (or its gear icon). **Wake Word Settings** opens.
+3. Tap **Manage Models**, then **Upload New Model (.onnx)**, and pick the downloaded file.
+4. Tap the new model in the list to make it active. HAwake restarts the wake word service with it.
+
+HAwake loads the file once when you upload it. If it shows "Invalid ONNX file (incompatible version)", check the
+model with `python check_opset.py <file>` and keep the defaults under *Advanced export*.
+""")

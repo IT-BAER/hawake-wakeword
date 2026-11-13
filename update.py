@@ -45,6 +45,20 @@ def run_cmd(cmd, check=True, capture=False):
         return result.stdout.strip() if result.returncode == 0 else None
     return subprocess.run(cmd, shell=True, check=check).returncode == 0
 
+def remove_onnxruntime_gpu(pip_exe):
+    """Older installs have onnxruntime-gpu next to onnxruntime; both write the same module folder.
+    Its CUDA provider does not load with current PyTorch builds, so keep only the CPU package."""
+    if not run_cmd(f'"{pip_exe}" show onnxruntime-gpu', capture=True, check=False):
+        return
+    info = run_cmd(f'"{pip_exe}" show onnxruntime', capture=True, check=False) or ""
+    version = next((l.split(":", 1)[1].strip() for l in info.splitlines() if l.startswith("Version:")), "")
+    print_step("Removing onnxruntime-gpu (no longer used)...")
+    run_cmd(f'"{pip_exe}" uninstall -y onnxruntime-gpu -q', check=False)
+    # the uninstall deleted files the CPU package shares, so reinstall it
+    spec = f"onnxruntime=={version}" if version else "onnxruntime"
+    run_cmd(f'"{pip_exe}" install --force-reinstall --no-deps "{spec}" -q', check=False)
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Update HAwake WakeWord Training")
@@ -104,8 +118,9 @@ def main():
         else:
             run_cmd(f'"{pip_exe}" install -r "{piper_req}" -q', check=False)
     
+    remove_onnxruntime_gpu(pip_exe)
     print_success("Dependencies updated")
-    
+
     # Step 4: Download Piper TTS model if needed
     piper_models_dir = script_dir / "piper-sample-generator" / "models"
     piper_model = piper_models_dir / "en_US-libritts_r-medium.onnx"

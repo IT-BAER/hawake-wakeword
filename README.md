@@ -2,42 +2,60 @@
 
 Custom OpenWakeWord training pipeline for generating wake word models compatible with [HAwake Android](https://play.google.com/store/apps/details?id=com.baer.hawake).
 
-## Quick Start (One-Liner)
+## Quick start for HAwake users
 
-### Windows (PowerShell)
+Three steps: install the trainer on a PC, train your wake word in the browser, load the `.onnx` file in the HAwake app.
+
+### 1. Install
+
+You need Python 3.11, Git and about 25 GB of free disk space. An NVIDIA GPU makes training faster but is optional.
+
+Windows (PowerShell):
 ```powershell
 git clone https://github.com/IT-BAER/hawake-wakeword.git; cd hawake-wakeword; .\install.ps1
 ```
 
-### Windows (CMD)
+Windows (CMD):
 ```cmd
 git clone https://github.com/IT-BAER/hawake-wakeword.git && cd hawake-wakeword && install.bat
 ```
 
-### Linux/macOS
+Linux/macOS:
 ```bash
 git clone https://github.com/IT-BAER/hawake-wakeword.git && cd hawake-wakeword && chmod +x install.sh && ./install.sh
 ```
 
-The setup script automatically:
-- Creates a virtual environment
-- Detects GPU and verifies CUDA kernel compatibility
-- Installs appropriate PyTorch version (GPU or CPU)
-- Installs all dependencies
-- Downloads Room Impulse Responses for audio augmentation
-- Downloads background audio data (~500MB–1GB) for training
-- Launches the WebUI at http://localhost:8501
+The installer creates a virtual environment, picks the right PyTorch build for your GPU (or CPU), installs the dependencies, downloads the training data (17 GB of negative training features, about 1.5 GB of AudioSet background audio, room impulse responses) and opens the WebUI at http://localhost:8501. With an NVIDIA GPU, PyTorch alone is a 2 GB download. A finished installation uses about 22 GB.
 
-**Note:** First-time setup downloads ~1-2 GB of required training data and may take 10-20 minutes.
+If the installer ends with a WARNING about background audio or training features, a download failed or was skipped. Run `python download_data.py` again before you train. Without the 17 GB training features (`openwakeword_features_ACAV100M_2000_hrs_16bit.npy`) the model reacts to normal speech: in a test with the same clips it made about 9700 false activations per hour on the validation set, against about 9 with the file. To skip this download on purpose, set `HAWAKE_SKIP_LARGE_FEATURES=1`; the download is also skipped when less than 19 GB is free.
 
-> **Optional:** For best training quality, download the full feature file (~16GB) separately:
-> ```bash
-> curl -L -o openwakeword_features_ACAV100M_2000_hrs_16bit.npy https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy
-> ```
-> Or run the install/download with the flag enabled:
-> ```bash
-> HAWAKE_DOWNLOAD_LARGE_FEATURES=1 ./install.sh
-> ```
+Later, start the WebUI again with `.\run_webui.ps1` (Windows) or `./run_webui.sh` (Linux/macOS).
+
+### 2. Train your wake word
+
+1. Enter your wake word in the sidebar, for example `hey nova`.
+2. Click **Generate Preview** and listen. If the voice says it wrong, change the spelling (for example `hey noh va`) until it sounds right.
+3. Click **Start Training**. Keep the browser tab open until the success message appears.
+
+<img src="screenshots/webui.png" alt="HAwake Wake Word Trainer WebUI with the wake word hey nova, the training settings in the sidebar and the download button in step 3" width="806">
+
+*The WebUI after a training run: settings in the sidebar, existing clips, features and model under step 2, and the download with the HAwake steps under step 3.*
+
+With the defaults (5000 examples, 5000 steps) a training run took about 2 hours 15 minutes on a PC with a 6-core Ryzen 5 7500F and an RTX 5060 Ti. About 2 hours of that is the generation of the synthetic voice clips, which runs on the CPU even with a GPU. Computing the features and training the model took about 13 minutes on the GPU. A second run with other training settings reuses the clips (**Resume Training**) and takes minutes. See [Training settings](QUICKSTART.md#training-settings) for what the settings change.
+
+### 3. Load the model in HAwake
+
+Step 3 at the bottom of the WebUI lists every trained model with a download button and these instructions.
+
+1. Get the `.onnx` file onto the phone. The easiest way: on the phone (same Wi-Fi as the PC), open the **Network URL** that the installer prints (for example `http://192.168.1.20:8501`), scroll to step 3 and tap **Download**. If the page does not load, allow Python in the Windows firewall for private networks, or copy the file over USB or a cloud drive. The file is also in the trainer folder: `<wake_word>/<wake_word>.onnx`.
+2. Open HAwake and tap the **Wake Word Service** card (or its gear icon). **Wake Word Settings** opens.
+3. Tap **Manage Models**, then **Upload New Model (.onnx)**, and pick the file.
+4. Tap the new model in the list to make it active. HAwake restarts the wake word service with it.
+
+<img src="screenshots/hawake-home.png" alt="HAwake home screen with the Wake Word Service card and its gear icon" width="346">
+
+*HAwake home screen: tap the Wake Word Service card or its gear icon to reach Manage Models.*
+
 
 ## Uninstall
 
@@ -79,7 +97,7 @@ Example full cleanup:
 
 - Python 3.11 (the installers check for it; newer Python versions lack wheels for piper-phonemize and other pinned packages)
 - CUDA (optional, for GPU acceleration)
-- ~10GB disk space (training data + models)
+- About 25 GB free disk space (17 GB training features, about 5 GB for the environment, audio data and one trained wake word)
 
 ## Manual Setup
 
@@ -100,7 +118,7 @@ python patch_dp.py                      # PyTorch 2.6+ compatibility
 ### 2. Download Training Data
 
 ```bash
-python download_data.py     # Background audio (AudioSet, FMA)
+python download_data.py     # Training features (17 GB), AudioSet background audio, validation set
 python download_rirs.py     # Room impulse responses
 ```
 
@@ -116,11 +134,7 @@ streamlit run app.py
 
 ### 4. Train a Wake Word
 
-1. Enter your wake word (e.g., "hey jarvis")
-2. Click **Generate Preview** to hear pronunciation
-3. Adjust spelling if needed for correct pronunciation
-4. Click **Start Training**
-5. Download the resulting `.onnx` model
+Continue with [2. Train your wake word](#2-train-your-wake-word).
 
 ## Configuration
 
@@ -146,14 +160,7 @@ Edit the file to configure:
 
 ## Integration with HAwake Android
 
-After training, copy your model to HAwake:
-
-```bash
-# Copy to HAwake Android assets
-cp my_model/my_wake_word.onnx /path/to/hawake-android/app/src/main/assets/
-```
-
-Or upload via the HAwake app's "Manage Wake Words" dialog.
+See [3. Load the model in HAwake](#3-load-the-model-in-hawake). Developers who build HAwake themselves can also ship a model as an app asset in `hawake-android/app/src/main/assets/`.
 
 ### Optional: TFLite export
 
@@ -213,7 +220,8 @@ The WebUI has a **"Force CPU Mode"** checkbox under Hardware settings that lets 
 |-------|----------|
 | Model crashes on Android | Run `check_opset.py` - must be Opset 11 |
 | TTS sounds wrong | Adjust spelling phonetically |
-| Low detection accuracy | Increase training examples to 10000+ |
+| HAwake misses the wake word | Train again with more Training Steps, for example 20000; **Resume Training** reuses the clips. See [Training settings](QUICKSTART.md#training-settings) |
+| Model reacts to normal speech | Check that `openwakeword_features_ACAV100M_2000_hrs_16bit.npy` exists, else run `python download_data.py`; raise the False Activation Penalty |
 
 ## Credits
 

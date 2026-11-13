@@ -16,6 +16,7 @@ Total download: ~1-2 GB (without large training features)
 import os
 import sys
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from urllib.request import urlretrieve, urlopen
@@ -88,9 +89,9 @@ def download_background_audio_simple():
 
     output_dir = Path("audioset_16k")
 
-    # Check if already has content
-    if output_dir.exists() and len(list(output_dir.glob("*.wav"))) >= 500:
-        count = len(list(output_dir.glob("*.wav")))
+    # Only real AudioSet clips count; noise_*.wav from the synthetic fallback do not
+    if output_dir.exists() and len(list(output_dir.glob("audioset_*.wav"))) >= 500:
+        count = len(list(output_dir.glob("audioset_*.wav")))
         print(f"[✓] audioset_16k already has {count} files")
         return True
 
@@ -99,7 +100,6 @@ def download_background_audio_simple():
     try:
         import scipy.io.wavfile
         import numpy as np
-        from tqdm import tqdm
         import soundfile as sf
     except ImportError as e:
         print(f"[!] Missing dependency: {e}")
@@ -107,42 +107,44 @@ def download_background_audio_simple():
         return False
 
     print("Downloading background audio from HuggingFace AudioSet...")
-    print("Using parallel downloads for speed...")
 
     try:
         import pyarrow.parquet as pq
         import io
         import requests
-        from concurrent.futures import ThreadPoolExecutor, as_completed
 
         # Download multiple parquet files to get enough samples
         base_url = "https://huggingface.co/datasets/agkphysics/AudioSet/resolve/refs%2Fconvert%2Fparquet/balanced/train"
         # Defaults are conservative to avoid OOM kills in WSL
         parquet_count = int(os.getenv("HAWAKE_AUDIOSET_PARQUET_FILES", "2"))
-        max_workers = int(os.getenv("HAWAKE_AUDIOSET_WORKERS", "1"))
         max_clips = int(os.getenv("HAWAKE_AUDIOSET_MAX_CLIPS", "1000"))
         parquet_files = [f"{base_url}/{i:04d}.parquet" for i in range(parquet_count)]
 
         count = 0
-        errors = 0
-        
+
         def download_parquet(url):
-            """Download a single parquet file."""
+            """Stream one ~690 MB parquet file to disk; holding it in RAM caused MemoryError."""
+            dest = output_dir / (url.split('/')[-1] + ".part")
             try:
-                response = requests.get(url, timeout=120)
-                response.raise_for_status()
-                return url, response.content
+                with requests.get(url, timeout=120, stream=True) as response:
+                    response.raise_for_status()
+                    with open(dest, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=1 << 20):
+                            f.write(chunk)
+                return url, dest
             except Exception as e:
+                print(f"\n  [!] {url.split('/')[-1]}: {e}")
+                dest.unlink(missing_ok=True)
                 return url, None
-        
-        def process_parquet_bytes(parquet_content, start_count, max_count, output_dir):
-            """Process parquet bytes and extract audio files."""
-            parquet_bytes = io.BytesIO(parquet_content)
-            table = pq.read_table(parquet_bytes)
-            df = table.to_pandas()
-            
+
+        def process_parquet_file(parquet_path, start_count, max_count, output_dir):
+            """Extract clips a few rows at a time; buffered page reads keep a whole row group
+            (AudioSet: ~140 MB) out of memory."""
             count = 0
-            for idx, row in df.iterrows():
+            pf = pq.ParquetFile(parquet_path, pre_buffer=False, buffer_size=1 << 20)
+            rows = (row for batch in pf.iter_batches(batch_size=4, columns=['video_id', 'audio'], use_threads=False)
+                    for row in batch.to_pylist())
+            for row in rows:
                 if start_count + count >= max_count:
                     break
                 try:
@@ -178,33 +180,33 @@ def download_background_audio_simple():
                     continue
             return count
 
-        # Download parquet files in parallel
-        print(f"Downloading {len(parquet_files)} parquet files in parallel (workers={max_workers}, max_clips={max_clips})...")
-        downloaded_files = []
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(download_parquet, url): url for url in parquet_files}
-            
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading"):
-                url, content = future.result()
-                if content:
-                    downloaded_files.append((url, content))
-                else:
-                    print(f"\n  [!] Failed to download: {url.split('/')[-1]}")
-        
-        # Process downloaded files sequentially
-        print(f"\nProcessing {len(downloaded_files)} parquet files...")
-        for url, content in downloaded_files:
+        # Download and process one file at a time; stop once enough clips exist
+        print(f"Downloading up to {len(parquet_files)} parquet files (max_clips={max_clips})...")
+        for url in parquet_files:
             if count >= max_clips:
                 break
-            
             filename = url.split('/')[-1]
-            print(f"  Processing: {filename}")
-            
-            processed = process_parquet_bytes(content, count, max_clips, output_dir)
+            print(f"  Downloading: {filename}")
+            _, path = download_parquet(url)
+            if path is None:
+                continue
+            try:
+                print(f"  Processing: {filename}")
+                processed = process_parquet_file(path, count, max_clips, output_dir)
+            finally:
+                path.unlink(missing_ok=True)
             count += processed
             print(f"    Extracted {processed} clips (total: {count})")
-        
+
+        if count > 0:
+            # Real clips replace synthetic noise from an earlier fallback
+            for noise in output_dir.glob("noise_*.wav"):
+                noise.unlink()
+        else:
+            print("[!] No clips extracted from AudioSet")
+            return download_background_audio_fallback()
+        return True
+
     except Exception as e:
         print(f"[!] Error with parquet download: {e}")
         import traceback
@@ -289,40 +291,41 @@ def download_feature_files():
         size_mb = os.path.getsize(val_file) / (1024 * 1024)
         print(f"[✓] {val_file} already exists ({size_mb:.1f} MB)")
     else:
-        if not download_with_progress(val_url, val_file, "Validation features (~50MB)"):
+        if not download_with_progress(val_url, val_file, "Validation features (~180MB)"):
             print(f"[✗] Failed to download {val_file}")
             return False
         print(f"[✓] {val_file} downloaded")
     
-    # Large training features file (16GB!) - make this optional
+    # Negative training features (17 GB). Without them the model fires on ordinary speech:
+    # about 9700 false activations per hour on the validation set instead of about 9.
     train_file = "openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
     train_url = "https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy"
-    
+    train_size = 17_280_000_128
+
     if os.path.exists(train_file):
         size_gb = os.path.getsize(train_file) / (1024 * 1024 * 1024)
         print(f"[✓] {train_file} already exists ({size_gb:.1f} GB)")
+        return True
+
+    print()
+    free = shutil.disk_usage(".").free
+    if os.getenv("HAWAKE_SKIP_LARGE_FEATURES") == "1":
+        print(f"[!] Skipped {train_file} (HAWAKE_SKIP_LARGE_FEATURES=1)")
+    elif free < train_size + 2 * 1024**3:
+        print(f"[!] Not enough free disk space for {train_file}: "
+              f"{free / 1024**3:.1f} GB free, 19 GB needed")
     else:
-        download_large = os.getenv("HAWAKE_DOWNLOAD_LARGE_FEATURES", "0") == "1"
-        if download_large:
-            print()
-            print("[!] Downloading large training features file (~16GB)...")
-            if not download_with_progress(train_url, train_file, "Training features (16GB)"):
-                print(f"[✗] Failed to download {train_file}")
-                return False
+        part = train_file + ".part"
+        if download_with_progress(train_url, part, "Training features (17 GB, the largest download)"):
+            os.replace(part, train_file)
             print(f"[✓] {train_file} downloaded")
-        else:
-            print()
-            print("[!] Large training features file not found (~16GB download)")
-            print("    This file significantly improves training quality.")
-            print()
-            print("    To download (recommended for best quality):")
-            print(f"    curl -L -o {train_file} {train_url}")
-            print("    Or set HAWAKE_DOWNLOAD_LARGE_FEATURES=1 when running download_data.py or install.sh")
-            print("    Or via browser: https://huggingface.co/datasets/davidscripka/openwakeword_features")
-            print()
-            print("    Training will still work without it using AudioSet background audio.")
-            print()
-    
+            return True
+        if os.path.exists(part):
+            os.remove(part)
+        print(f"[✗] Failed to download {train_file}")
+    print("    Without this file the trained model reacts to normal speech.")
+    print("    Download it later with: python download_data.py")
+    print(f"    or manually: curl -L -o {train_file} {train_url}")
     return True
 
 
@@ -336,7 +339,7 @@ def main():
     print("Downloads:")
     print("  • MIT Room Impulse Responses (~10MB)")
     print("  • Background audio samples (~500MB-1GB)")
-    print("  • OpenWakeWord feature files (validation ~50MB)")
+    print("  • OpenWakeWord feature files (validation ~180MB, training negatives ~17GB)")
     print()
     
     # Check if we have required dependencies
@@ -370,7 +373,8 @@ def main():
     
     # Summary
     rir_count = len(list(Path("mit_rirs").glob("*.wav"))) if Path("mit_rirs").exists() else 0
-    audioset_count = len(list(Path("audioset_16k").glob("*.wav"))) if Path("audioset_16k").exists() else 0
+    audioset_count = len(list(Path("audioset_16k").glob("audioset_*.wav"))) if Path("audioset_16k").exists() else 0
+    noise_count = len(list(Path("audioset_16k").glob("noise_*.wav"))) if Path("audioset_16k").exists() else 0
     fma_count = len(list(Path("fma").glob("*.wav"))) if Path("fma").exists() else 0
     has_validation = os.path.exists("validation_set_features.npy")
     has_training = os.path.exists("openwakeword_features_ACAV100M_2000_hrs_16bit.npy")
@@ -380,13 +384,22 @@ def main():
     print(f"  • audioset_16k:  {audioset_count} files")
     print(f"  • fma:           {fma_count} files")
     print(f"  • validation_set_features.npy: {'✓' if has_validation else '✗'}")
-    print(f"  • training features (16GB):    {'✓' if has_training else '✗ (optional)'}")
+    print(f"  • training features (17GB):    {'✓' if has_training else '✗'}")
     print()
     
-    if audioset_count == 0 and fma_count == 0:
+    if noise_count:
+        print(f"  • synthetic noise: {noise_count} files")
+        print()
+        print("[WARNING] AudioSet download failed: training would use synthetic noise only,")
+        print("          which gives a model with many false activations.")
+        print("          Re-run: python download_data.py")
+    elif audioset_count == 0 and fma_count == 0:
         print("[WARNING] No background audio downloaded!")
         print("Training may still work with synthetic samples.")
         print("For best results, manually download AudioSet data.")
+    elif not has_training:
+        print("[WARNING] Training features missing: the model will react to normal speech.")
+        print("          Re-run: python download_data.py")
     elif audioset_count + fma_count < 100:
         print("[WARNING] Very few background audio files.")
         print("Training may produce lower quality models.")

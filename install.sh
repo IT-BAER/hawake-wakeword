@@ -1,7 +1,7 @@
 #!/bin/bash
 # HAwake WakeWord Training - One-liner Setup
-# Usage: curl -sSL https://raw.githubusercontent.com/IT-BAER/hawake-wakeword/main/install.sh | bash
-# Or: ./install.sh
+# Usage: git clone https://github.com/IT-BAER/hawake-wakeword.git && cd hawake-wakeword && ./install.sh
+# (needs the full clone: app.py, requirements.txt and the modified openwakeword copy)
 
 set -e
 
@@ -182,16 +182,17 @@ else
     fi
 
     # Download background audio data (required for training)
-    if [ ! -d "audioset_16k" ] || [ -z "$(ls -A audioset_16k/*.wav 2>/dev/null)" ]; then
+    # Only real AudioSet clips count: noise_*.wav from the synthetic fallback must not skip a retry
+    if [ ! -d "audioset_16k" ] || [ -z "$(ls -A audioset_16k/audioset_*.wav 2>/dev/null)" ] || [ ! -f "openwakeword_features_ACAV100M_2000_hrs_16bit.npy" ]; then
         echo ""
-        echo -e "${CYAN}[*] Downloading background audio data (~3-5 GB)...${NC}"
-        echo "    This is required for training and may take 10-30 minutes"
+        echo -e "${CYAN}[*] Downloading training data (about 19 GB)...${NC}"
+        echo "    This is required for training and may take 10-60 minutes"
         echo ""
         if python download_data.py; then
             echo -e "${GREEN}[✓] Background audio downloaded${NC}"
         else
             echo -e "${YELLOW}[!] Background audio download failed. Retrying with smaller settings...${NC}"
-            if HAWAKE_AUDIOSET_WORKERS=1 HAWAKE_AUDIOSET_PARQUET_FILES=1 HAWAKE_AUDIOSET_MAX_CLIPS=200 python download_data.py; then
+            if HAWAKE_AUDIOSET_PARQUET_FILES=1 HAWAKE_AUDIOSET_MAX_CLIPS=200 python download_data.py; then
                 echo -e "${GREEN}[✓] Background audio downloaded with reduced settings${NC}"
             else
                 echo -e "${YELLOW}[!] Reduced download failed. Generating synthetic background audio...${NC}"
@@ -203,9 +204,20 @@ PY
             fi
         fi
     else
-        AUDIOSET_COUNT=$(ls -1 audioset_16k/*.wav 2>/dev/null | wc -l)
+        AUDIOSET_COUNT=$(ls -1 audioset_16k/audioset_*.wav 2>/dev/null | wc -l)
         echo -e "${GREEN}[✓] Background audio exists ($AUDIOSET_COUNT files)${NC}"
     fi
+fi
+
+if [ -z "$(ls -A audioset_16k/audioset_*.wav 2>/dev/null)" ]; then
+    echo ""
+    echo -e "${YELLOW}[!] WARNING: no real background audio (AudioSet download failed or skipped).${NC}"
+    echo -e "${YELLOW}    A model trained now false-triggers often. Run: python download_data.py${NC}"
+fi
+if [ ! -f "openwakeword_features_ACAV100M_2000_hrs_16bit.npy" ]; then
+    echo ""
+    echo -e "${YELLOW}[!] WARNING: training features (17 GB) missing. A model trained now reacts to normal speech.${NC}"
+    echo -e "${YELLOW}    Run: python download_data.py${NC}"
 fi
 
 echo ""

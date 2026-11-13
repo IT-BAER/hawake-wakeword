@@ -871,10 +871,13 @@ if __name__ == '__main__':
             else:
                 n_cpus = n_cpus//2
             
-            # Determine device logic
-            use_gpu = torch.cuda.is_available() and not args.force_cpu
+            # Features run in ONNX Runtime, not torch: its CUDA provider can fail to load next to a working
+            # torch GPU and silently fall back to CPU, so use the GPU only when that provider really loads
+            use_gpu = (torch.cuda.is_available() and not args.force_cpu
+                       and AudioFeatures(device="gpu").onnx_execution_provider == "CUDAExecutionProvider")
             target_device = "gpu" if use_gpu else "cpu"
             ncpu_val = 1 if use_gpu else n_cpus
+            logging.info(f"Computing features with ONNX Runtime on {target_device} ({ncpu_val} threads)")
             
             compute_features_from_generator(positive_clips_train_generator, n_total=len(positive_clips_train),
                                             clip_duration=config["total_length"],
